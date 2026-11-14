@@ -1,8 +1,22 @@
 # Aether Studio
 
-Aether is a local AI coding studio with an integrated code editor, workspace file tree, code search, and multi-model AI assistant (supporting free models via Pollinations as well as OpenAI and Google Gemini).
+Aether is a local AI coding studio with an integrated code editor, workspace file tree, code search, and multi-model AI assistant (supporting Pollinations, OpenAI, and Google Gemini).
 
 ---
+
+## Electron desktop shell
+
+From the repository root in PowerShell:
+
+```powershell
+npm.cmd ci
+npm.cmd exec -- install-electron
+npm.cmd run electron:dev
+```
+
+The desktop window uses a frameless title bar, IntelliJ-style menus, tool strips, resizable panels, and a status bar. Panel selection and sizes persist locally. Project import, editing, builds, terminal sessions, and AI are shown as placeholders in this desktop shell. Run `npm.cmd run dev` for the existing browser IDE.
+
+Run `npm.cmd run desktop:typecheck` for strict TypeScript checks and `npm.cmd run desktop:build` for the desktop build.
 
 ## ⚡ Quick Start
 
@@ -77,7 +91,7 @@ When you first open Aether:
 
 Aether can run as a pure web app with **zero dependency on a local Node.js backend**:
 - **Direct Local File Access**: Uses modern browser Web File System Access (`showDirectoryPicker`) to read, write, and search your local files directly on disk.
-- **Direct AI & Web Proxy**: Calls free AI models (Pollinations) and API providers (Gemini / OpenAI) directly from the browser.
+- **Direct AI & Web Proxy**: Uses Gemini or OpenAI directly when running without a backend. Pollinations uses the local backend and its server-side key.
 - **Optional Web Proxy**: Configure a custom CORS / Web Proxy URL in the **Tokens & Settings** modal for environments that restrict direct outbound calls.
 
 ---
@@ -142,14 +156,23 @@ npm run dev
 
 ---
 
+## IDE, Chat, and Agent
+
+- **IDE** opens the project explorer and editor. Use **Open project** for direct folder access or **Import Folder** and **Import Files** to work with browser copies. Imported files download when saved. Use Ctrl/Cmd+S to save a workspace file or download a standalone draft. Toggle line wrapping in Settings to show line numbers.
+- **Chat** keeps conversation context across follow-ups. It has no workspace tools.
+- **Agent** can inspect a writable project and propose file contents. Open **Review draft** to inspect or edit a proposal, then save it in the editor to apply it.
+
+### Maven and Java Run
+
+Open a Maven project through **Server Browser** on localhost. Use **Maven** in the toolbar to select a module and goal, or **Run** to choose a detected Java main class. The bottom console streams output and includes Stop. Maven runs the project’s build plugins after you trust the project.
+
+If a default dev port is in use, set `AETHER_FRONTEND_PORT` and `AETHER_BACKEND_PORT` before running `npm run dev`. The Vite proxy uses the configured backend port.
+
 ## 🤖 AI Models Supported
 
 Aether includes built-in model providers:
 
-- **Free Tier (No API key required - 100% Free)**:
-  - **Aether Spark** (`openai-fast`) — Fast responses
-  - **Aether Loom** (`openai`) — Balanced reasoning
-  - **Aether Forge** (`qwen-coder`) — Code-focused assistance
+- **Pollinations** — Set the `POLLINATIONS_KEY` environment variable before starting the server. The model picker offers Aether Spark, Loom, and Forge. For Agent with Pollinations, open the project through **Browse Server Workspace**.
 - **Google Gemini (BYO Gemini API Key in Vault)**:
   - **3.5 Flash-Lite** — Fastest answers
   - **3.6 Flash** — All-around help

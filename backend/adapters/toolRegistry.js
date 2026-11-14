@@ -28,7 +28,7 @@ const TOOLS = [
   },
   {
     name: 'write_file',
-    description: 'Create or overwrite a text file in the workspace.',
+    description: 'Propose the complete contents of a workspace file for user review.',
     parameters: {
       type: 'object',
       properties: {
@@ -90,12 +90,6 @@ function executeTool(name, args, { root, safeJoin, toRel, collectFiles, SKIP_DIR
       const stat = fs.statSync(abs)
       if (stat.size > 200000) return 'File too large to read in one pass.'
       return fs.readFileSync(abs, 'utf8')
-    }
-    if (name === 'write_file') {
-      const abs = safeJoin(args.path || '')
-      fs.mkdirSync(path.dirname(abs), { recursive: true })
-      fs.writeFileSync(abs, String(args.content ?? ''), 'utf8')
-      return `Wrote ${toRel(abs)}`
     }
     if (name === 'search_code') {
       const q = String(args.query || '').trim()

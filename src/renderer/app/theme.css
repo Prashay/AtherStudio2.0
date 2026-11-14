@@ -1,0 +1,70 @@
+:root {
+  color-scheme: dark;
+  --bg: #1e1f22;
+  --panel: #2b2d30;
+  --border: #393b40;
+  --text: #dfe1e5;
+  --muted: #868a91;
+  --accent: #3574f0;
+  --error: #f75464;
+  --warning: #e5bf4b;
+  --success: #5fb865;
+  font: 13px system-ui, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+body { margin: 0; }
+main { min-height: 100vh; display: grid; place-content: center; text-align: center; }
+h1 { margin: 0; font-size: 22px; }
+p { margin: 8px 0 0; color: var(--muted); }
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; overflow: hidden; }
+button { font: inherit; color: inherit; background: transparent; border: 0; cursor: pointer; }
+button:disabled { color: var(--muted); opacity: .55; cursor: default; }
+button:not(:disabled):hover { background: #ffffff12; }
+button:focus-visible, [role="separator"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.desktop { min-height: 0; height: 100%; display: grid; grid-template-rows: 40px minmax(0, 1fr) 26px; text-align: left; background: #252629; }
+.titlebar { display: flex; align-items: center; min-width: 0; padding-left: 10px; gap: 5px; background: #2b2d33; -webkit-app-region: drag; position: relative; z-index: 3; }
+.titlebar button, .titlebar nav { -webkit-app-region: no-drag; }
+.app-icon { display: grid; place-items: center; flex: none; width: 23px; height: 23px; margin-right: 6px; border: 1px solid #557fd1; border-radius: 5px; background: #181b26; font-weight: 700; color: #dce7ff; }
+.titlebar nav { display: flex; height: 100%; align-items: stretch; }
+.menu-anchor { display: flex; position: relative; }
+.menu-anchor > button { padding: 0 7px; }
+.menu-anchor > button[aria-expanded="true"] { background: #3a4357; }
+.menu-dropdown { position: absolute; top: 100%; left: 0; min-width: 235px; max-height: calc(100vh - 57px); overflow: auto; padding: 5px; display: grid; background: #292b30; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 12px 28px #0007; }
+.menu-dropdown button { padding: 5px 9px; text-align: left; border-radius: 4px; white-space: nowrap; }
+.menu-dropdown hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 3px 0; }
+.title-spacer, .strip-spacer, .status-spacer { flex: 1; }
+.run-controls, .window-controls { display: flex; align-items: center; white-space: nowrap; }
+.run-controls button, .window-controls button { height: 36px; display: inline-flex; align-items: center; gap: 6px; padding: 0 7px; }
+.window-controls button { justify-content: center; width: 39px; }
+.window-controls button:last-child:hover { background: #c42b42; color: white; }
+.workspace { display: grid; grid-template-columns: 38px minmax(0, 1fr) 38px; min-height: 0; padding: 2px 2px 0; }
+.tool-strip { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 4px 0; }
+.icon-button { display: inline-grid; flex: none; place-items: center; width: 29px; height: 29px; border-radius: 6px; color: #b7bbc5; }
+.icon-button[aria-pressed="true"] { background: #42464e; color: #e5e9f2; }
+.card { height: 100%; min-height: 0; background: #191a1c; border: 1px solid #2d2f33; border-radius: 8px; overflow: hidden; }
+.resize-handle { flex: 0 0 4px; }
+.resize-handle:hover { background: var(--accent); }
+.tool-panel > header { height: 36px; display: flex; gap: 6px; align-items: center; padding: 0 9px; border-bottom: 1px solid #282a2d; }
+.tool-panel header strong { font-weight: 550; }
+.tool-panel header button[aria-pressed="true"] { background: #30333a; border-radius: 5px; }
+.panel-close { margin-left: auto; }
+.panel-content { padding: 12px; color: var(--muted); }
+.terminal-tabs { display: inline-flex; align-items: center; gap: 5px; margin: 8px 10px 0; padding: 2px 5px; border: 1px solid var(--border); border-radius: 4px; }
+.terminal-tabs button { display: grid; padding: 1px; }
+.editor-empty { display: grid; place-content: center; justify-items: center; text-align: center; padding: 14px; }
+.editor-empty h1 { margin-top: 14px; }
+.editor-empty button, .dialog-backdrop button { margin-top: 15px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 5px; }
+.welcome-mark { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 12px; background: #202b43; color: #8bb0f8; }
+.statusbar { display: flex; align-items: center; padding: 0 12px; gap: 14px; color: #aeb4c0; font-size: 12px; }
+.dialog-backdrop { position: fixed; inset: 0; display: grid; place-items: center; background: #0008; z-index: 4; }
+.dialog-backdrop section { min-width: 250px; padding: 20px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+@media (max-width: 1120px) { .run-controls { display: none; } }
+@media (max-width: 900px) {
+  .titlebar nav { overflow-x: auto; scrollbar-width: none; }
+  .titlebar nav:has([aria-expanded="true"]) { overflow: visible; }
+  .menu-anchor > button { padding-inline: 5px; }
+}

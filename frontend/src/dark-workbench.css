@@ -1,0 +1,564 @@
+/* Dark workbench surfaces */
+.app.intellij-workbench {
+  color-scheme: dark;
+  --sans: 'Roboto', Arial, sans-serif;
+  --glass-text-size: 13px;
+  --glass-caption-size: 11px;
+  --glass-radius: 15px;
+  --glass-control-radius: 10px;
+  font: 400 var(--glass-text-size)/1.4 var(--sans);
+  --ink: #151415;
+  --panel: #292523;
+  --panel-2: #342d29;
+  --paper: #f6f0e9;
+  --muted: #bfb5ad;
+  --line: #e9d4c942;
+  --copper: #ffa561;
+  --copper-2: #ffd0aa;
+  --glass-action: #ff7624;
+  --glass-action-ink: #21130d;
+  --glass-selection: #ff9a5427;
+  --glass-edge: #ffb68168;
+  --glass-panel: linear-gradient(145deg, #f5e1d517, #ebd5c509 70%), #29232180;
+  --glass-header: #fff5ec08;
+  --glass-field: #161414b8;
+  --glass-popover: linear-gradient(135deg, #473831 0%, #302927 55%, #252323 100%);
+  --glass-shadow: 0 8px 24px #09060543, inset 0 1px #ffffff09;
+  color: var(--paper);
+  background:
+    radial-gradient(ellipse at 17% 0%, #85403364, transparent 46%),
+    radial-gradient(ellipse at 91% 48%, #a95e35a0, transparent 52%),
+    radial-gradient(ellipse at 71% 5%, #677c5b75, transparent 38%),
+    radial-gradient(ellipse at 13% 84%, #465e738e, transparent 46%),
+    #171516;
+}
+
+[data-theme="cosmic"] .app.intellij-workbench { --glass-action: #aac8fa; --glass-selection: #a6c7ff25; --glass-edge: #a6c7ff70; }
+[data-theme="emerald"] .app.intellij-workbench { --glass-action: #97deb7; --glass-selection: #97deb725; --glass-edge: #97deb770; }
+[data-theme="cyberpunk"] .app.intellij-workbench { --glass-action: #dac0ff; --glass-selection: #dac0ff25; --glass-edge: #dac0ff70; }
+[data-theme="midnight"] .app.intellij-workbench { --glass-action: #c7d1df; --glass-selection: #c7d1df25; --glass-edge: #c7d1df64; }
+
+.app.intellij-workbench .topbar { background: #241d1c85; border-bottom-color: var(--line); }
+.app.intellij-workbench :is(.side, .stage, .chat, .maven-tool-window, .maven-panel) {
+  background: var(--glass-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--glass-radius);
+  box-shadow: var(--glass-shadow);
+}
+.app.intellij-workbench .stage { background: linear-gradient(125deg, #44322925, transparent 58%), #181719ed; }
+.app.intellij-workbench :is(.side-head, .stage-head, .chat-head, .chat-mode-topbar, .editor-bar, .structure-tool header, .maven-toolbar, .maven-status) {
+  background: var(--glass-header);
+  border-color: var(--line);
+}
+.app.intellij-workbench :is(.code-editor, .maven-panel pre, .bubble.ai pre) {
+  background: #151416;
+  color: var(--paper);
+}
+.app.intellij-workbench .code-editor .editor { background: transparent; color: var(--paper); caret-color: var(--glass-action); }
+.app.intellij-workbench .code-gutter { background: #1d1b1d; color: #aaa19a; border-color: var(--line); }
+.app.intellij-workbench :is(.workbench-symbol, .vault-orb) {
+  color: var(--copper-2);
+  border-color: var(--glass-edge);
+  background: linear-gradient(140deg, #ac694b54, #332827);
+}
+
+.app.intellij-workbench :is(.primary, .primary:hover) {
+  color: var(--glass-action-ink);
+  background: var(--glass-action);
+  border-color: #fff3e572;
+  box-shadow: inset 0 1px #ffffff40, 0 2px 8px #160c0745;
+}
+.app.intellij-workbench .primary:hover:not(:disabled) { filter: brightness(1.12); }
+.app.intellij-workbench :is(.ghost, .model-btn, .workbench-menu-toggle, .quick-chip) {
+  color: var(--paper);
+  background: linear-gradient(145deg, #fff5ec14, #fff5ec05);
+  border-color: var(--line);
+  box-shadow: none;
+}
+.app.intellij-workbench :is(.ghost, .model-btn, .quick-chip):hover:not(:disabled) { background: #fff1e423; }
+.app.intellij-workbench :is(.modes, .chip, .md-view-mode-pill) { background: #19151590; border-color: var(--line); }
+.app.intellij-workbench :is(.modes button.on, .tab.on, .tree-item.on, .view-pill-btn.active, .theme-chip.active, .settings-nav-item.active, .workbench-strip button[aria-pressed="true"], .maven-tool-actions button[aria-pressed="true"], .maven-command-results button.on, .search-everywhere li button.on) {
+  color: var(--paper);
+  background: var(--glass-selection);
+  border-color: var(--glass-edge);
+  box-shadow: none;
+}
+.app.intellij-workbench .editor-tab-close:hover { background: #fff4e824; }
+.app.intellij-workbench :is(.tree-item, .folder-row, .hit, .maven-command-results button, .structure-tool > button):hover { background: #fff4e812; }
+.app.intellij-workbench :is(.run-toggle, .code-gutter-line button) { color: #a4d9a9; }
+.app.intellij-workbench :is(.side-head, .chat-head, .workbench-status, .maven-status, .editor-bar .path, .composer .hint) { color: var(--muted); }
+
+.app.intellij-workbench :is(.composer, .chat-mode-input-capsule) { background: #262020b0; border-color: var(--line); }
+.app.intellij-workbench :is(.bubble, .tool) { color: var(--paper); background: #fff4ea0d; border-color: var(--line); }
+.app.intellij-workbench .bubble.user { background: var(--glass-selection); border-color: var(--glass-edge); }
+.app.intellij-workbench .bubble.err { background: #73383352; border-color: #ef9d9077; }
+.app.intellij-workbench :is(.search-box input, .path-input, .composer textarea, .search-everywhere input, .maven-toolbar select, .run-configuration input, .run-configuration select, .run-configuration textarea, .launch-selector select, .maven-command-picker input, .maven-command-picker select) {
+  background: var(--glass-field);
+  color: var(--paper);
+  border-color: var(--line);
+}
+.app.intellij-workbench :is(input, textarea)::placeholder { color: #b8ada5; }
+.app.intellij-workbench :is(button, input, textarea, select, summary):focus-visible {
+  outline: 2px solid var(--glass-action);
+  outline-offset: 2px;
+}
+.app.intellij-workbench :is(.modal, .settings-panel-card, .picker, .workbench-menu-bar, .workbench-menu-items, .toolbar-popover > div, .gutter-run-menu, .mobile-menu-drawer) {
+  background: var(--glass-popover);
+  border-color: var(--line);
+  box-shadow: 0 12px 32px #07050576, inset 0 1px #ffffff0d;
+}
+.app.intellij-workbench .modal:not(.maven-command-picker) { border-radius: 16px; }
+.app.intellij-workbench .modal-back { background: #100d0cbe; }
+.app.intellij-workbench .workbench-strip button { color: var(--paper); }
+.app.intellij-workbench .workbench-strip button:hover { background: #fff4e81a; }
+
+@media (min-width: 1181px) {
+  .app.intellij-workbench .shell { gap: 6px; }
+  .app.intellij-workbench .maven-panel { margin: 0 37px; overflow: hidden; }
+}
+@media (max-width: 860px) {
+  .app.intellij-workbench .dock { background: #282120; border-color: var(--line); }
+  .app.intellij-workbench .dock-btn.on { color: var(--glass-action); }
+  .app.intellij-workbench :is(.side, .stage, .chat, .maven-panel) { border-radius: 0; box-shadow: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app.intellij-workbench :is(.topbar, .shell, .side, .stage, .chat, button) { transition: none; }
+}
+
+.app.intellij-workbench :is(.side-head, .stage-head, .chat-head, .maven-tool-window > header) {
+  min-height: 40px;
+  font-size: var(--glass-text-size);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.app.intellij-workbench :is(.tree-item, .editor-tab-label, .folder-row, .maven-lifecycle, .structure-tool) {
+  font-family: var(--sans);
+  font-size: var(--glass-text-size);
+  font-weight: 400;
+}
+.app.intellij-workbench :is(.workbench-status, .maven-status, .shortcut-hint) {
+  font-family: var(--sans);
+  font-size: var(--glass-caption-size);
+}
+.app.intellij-workbench :is(.primary, .ghost, .model-btn, .workbench-menu-toggle, .launch-selector select) {
+  border-radius: var(--glass-control-radius);
+  font-weight: 500;
+}
+.app.intellij-workbench .tree-item { margin-inline: 5px; min-height: 25px; border-radius: 6px; }
+.app.intellij-workbench .tabs .editor-tab { border-radius: 8px; }
+.app.intellij-workbench .editor-tab.on { border-bottom-color: var(--glass-action); }
+.app.intellij-workbench .workbench-home h2 {
+  font-size: clamp(24px, 2.8vw, 32px);
+  font-weight: 400;
+  letter-spacing: -.025em;
+  line-height: 1.15;
+}
+.app.intellij-workbench .workbench-home p { font-size: 13px; }
+.app.intellij-workbench .workbench-symbol { width: 48px; border-radius: 13px; font-size: 22px; }
+.app.intellij-workbench :is(.workbench-menu-items, .toolbar-popover > div, .picker) { border-radius: var(--glass-control-radius); }
+
+@media (min-width: 1181px) {
+  .app.intellij-workbench .shell { gap: 8px; }
+  .app.intellij-workbench .topbar { border-bottom-color: #e9d4c933; }
+}
+
+/* Menus and form controls share the same typography and surface tokens. */
+.app.intellij-workbench :is(.workbench-menu, .toolbar-popover, .picker, .settings-panel-card, .modal, .composer, .maven-toolbar, .run-configuration) {
+  font-family: var(--sans);
+  font-size: var(--glass-text-size);
+}
+.app.intellij-workbench :is(.workbench-menu-items button, .toolbar-popover button, .picker button, .maven-command-results button, .search-everywhere li button) {
+  min-height: 30px;
+  font-size: var(--glass-text-size);
+  font-weight: 400;
+  border-radius: 7px;
+}
+.app.intellij-workbench :is(.workbench-menu-items button, .toolbar-popover button, .picker button, .maven-command-results button, .search-everywhere li button):hover:not(:disabled) {
+  color: var(--paper);
+  background: var(--glass-selection);
+}
+.app.intellij-workbench :is(.picker button strong, .picker-model-btn strong) { font-size: 13px; font-weight: 500; }
+.app.intellij-workbench :is(.picker button span, .picker-label, .toolbar-popover small, .field-desc, .field-hint) {
+  font-size: var(--glass-caption-size);
+  color: var(--muted);
+}
+
+.app.intellij-workbench :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="hidden"]), select, textarea:not(.editor)) {
+  font-family: var(--sans);
+  font-size: var(--glass-text-size);
+  font-weight: 400;
+  color: var(--paper);
+  background: var(--glass-field);
+  border: 1px solid var(--line);
+  border-radius: var(--glass-control-radius);
+  box-shadow: inset 0 1px 2px #100b0a45;
+}
+.app.intellij-workbench :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="hidden"]), select) {
+  min-height: 28px;
+}
+.app.intellij-workbench :is(select, textarea:not(.editor), input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="hidden"])):focus {
+  border-color: var(--glass-edge);
+}
+.app.intellij-workbench select :is(option, optgroup) { background: var(--panel); color: var(--paper); }
+.app.intellij-workbench input:is([type="checkbox"], [type="radio"], [type="range"]) { accent-color: var(--glass-action); }
+.app.intellij-workbench .settings-nav { background: #1d181943; border-color: var(--line); }
+.app.intellij-workbench :is(.settings-head, .settings-footer) { background: var(--glass-header); border-color: var(--line); }
+.app.intellij-workbench .theme-chip { background: #fff4ea09; border-color: var(--line); color: var(--paper); }
+.app.intellij-workbench .theme-chip.active { background: var(--glass-selection); border-color: var(--glass-edge); }
+
+.app.intellij-workbench :is(.project-switcher > summary, .project-import-actions button, .project-folder-actions button) {
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--glass-control-radius);
+  font: 500 var(--glass-text-size)/1.25 var(--sans);
+}
+.app.intellij-workbench :is(.project-switcher > summary, .project-import-actions button, .project-folder-actions .ghost) {
+  background: linear-gradient(145deg, #fff5ec1c, #fff5ec07);
+  color: var(--paper);
+}
+.app.intellij-workbench .project-switcher > summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.project-switcher > summary > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.project-switcher-chevron {
+  flex: 0 0 6px;
+  height: 6px;
+  border: solid currentColor;
+  border-width: 0 1.5px 1.5px 0;
+  transform: translateY(-2px) rotate(45deg);
+}
+.project-switcher[open] .project-switcher-chevron { transform: translateY(2px) rotate(225deg); }
+.app.intellij-workbench .project-switcher[open] > summary,
+.app.intellij-workbench .project-switcher > summary:hover {
+  background: var(--glass-selection);
+  border-color: var(--glass-edge);
+}
+.app.intellij-workbench .project-switcher > div {
+  min-width: min(230px, 80vw);
+  padding: 6px;
+  border-color: var(--line);
+}
+.app.intellij-workbench .project-import-actions { padding: 6px 8px; gap: 5px; }
+.app.intellij-workbench .project-folder-actions { flex-wrap: wrap; }
+.app.intellij-workbench .folder-list {
+  background: var(--glass-field);
+  border: 1px solid var(--line);
+  border-radius: var(--glass-control-radius);
+}
+.app.intellij-workbench select:not([multiple], [size]) {
+  appearance: none;
+  padding-inline-end: 25px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--paper) 50%),
+    linear-gradient(135deg, var(--paper) 50%, transparent 50%);
+  background-position: right 13px center, right 9px center;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+}
+.app.intellij-workbench .history-btn { min-width: 30px; justify-content: center; padding-inline: 6px; }
+.app.intellij-workbench :is(.history-btn-icon, .cm-history-btn > span) { font: 18px/1 var(--sans); }
+
+.app.intellij-workbench :is(.checkbox-label, .maven-toolbar label) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--paper);
+}
+.app.intellij-workbench input:is([type="checkbox"], [type="radio"]) {
+  appearance: none;
+  position: relative;
+  inline-size: 16px;
+  block-size: 16px;
+  flex: 0 0 16px;
+  vertical-align: middle;
+  margin: 0;
+  border: 1px solid #c9aa978c;
+  border-radius: 5px;
+  background: var(--glass-field);
+  cursor: pointer;
+}
+.app.intellij-workbench input[type="radio"] { border-radius: 50%; }
+.app.intellij-workbench input:is([type="checkbox"], [type="radio"]):is(:checked, :indeterminate) {
+  background: var(--glass-action);
+  border-color: var(--glass-edge);
+  color: var(--glass-action-ink);
+}
+.app.intellij-workbench input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  inset: 2px auto auto 5px;
+  width: 4px;
+  height: 7px;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.app.intellij-workbench input[type="checkbox"]:indeterminate::after {
+  content: "";
+  position: absolute;
+  inset: 6px 3px auto;
+  border-top: 2px solid currentColor;
+}
+.app.intellij-workbench input[type="radio"]:checked::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.app.intellij-workbench input[type="range"] {
+  appearance: none;
+  height: 22px;
+  margin-block: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.app.intellij-workbench input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--glass-selection);
+}
+.app.intellij-workbench input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-edge);
+  background: var(--glass-action);
+}
+.app.intellij-workbench input[type="range"]::-moz-range-track {
+  height: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--glass-selection);
+}
+.app.intellij-workbench input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 50%;
+  background: var(--glass-action);
+}
+.app.intellij-workbench :is(button, input, textarea, select):disabled { opacity: .55; cursor: default; }
+.app.intellij-workbench :is(.md-checkbox, .md-checkbox:disabled) { opacity: 1; cursor: default; }
+.app.intellij-workbench :is(.density-toggle, .qr-source-toggle) { background: var(--glass-field); border-color: var(--line); }
+.app.intellij-workbench :is(.toggle-option.active, .qr-source-toggle button.on, .temp-chat-toggle-btn.active, button[aria-pressed="true"]:not(.primary)) {
+  color: var(--paper);
+  background: var(--glass-selection);
+  border-color: var(--glass-edge);
+}
+.app.intellij-workbench :is(.settings-close-btn, .key-peek-btn, .key-test-btn, .settings-action-btn, .history-action-btn:not(.primary)) {
+  font-family: var(--sans);
+  border-radius: var(--glass-control-radius);
+  border-color: var(--line);
+}
+@media (forced-colors: active) {
+  .app.intellij-workbench input:is([type="checkbox"], [type="radio"], [type="range"]), .app.intellij-workbench select { appearance: auto; }
+  .app.intellij-workbench input:is([type="checkbox"], [type="radio"])::after { content: none; }
+  .app.intellij-workbench select { background-image: none; }
+}
+
+/* Warm Glass wallpaper */
+:root:not([data-workbench-theme]), [data-workbench-theme="frenky-orange"] { --frenky-wallpaper: url('./warm-glass-background.png'); }
+[data-workbench-theme="frenky-orange"] .app.intellij-workbench {
+  background:
+    linear-gradient(180deg, #16110e39, #15111163),
+    var(--frenky-wallpaper) center / cover no-repeat,
+    #171516;
+  --glass-panel: linear-gradient(145deg, #f5e1d518, #ebd5c509 70%), #29232199;
+}
+[data-workbench-theme="frenky-orange"] .app.intellij-workbench :is(.side, .chat, .maven-tool-window),
+[data-workbench-theme="frenky-orange"] .app.intellij-workbench .stage:has(.workbench-home) {
+  backdrop-filter: blur(12px);
+}
+[data-workbench-theme="frenky-orange"] .app.intellij-workbench .stage:has(.workbench-home) {
+  background: linear-gradient(135deg, #31252157, #1715166e);
+}
+
+.app.intellij-workbench :is(.top-actions, .project-import-actions) .workbench-icon-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+}
+.app.intellij-workbench .top-actions .chip.workbench-icon-button {
+  border-radius: var(--glass-control-radius);
+  color: var(--muted);
+}
+.app.intellij-workbench .top-actions .workbench-icon-button svg,
+.app.intellij-workbench .project-import-actions .workbench-icon-button svg { width: 19px; height: 19px; flex: none; }
+@media (max-width: 1180px) {
+  .app.intellij-workbench .top-actions .workbench-icon-button.ghost {
+    display: inline-grid !important;
+  }
+}
+
+.app.intellij-workbench .workbench-strip button { font-size: 19px; }
+
+/* Project and Maven trees */
+.app.intellij-workbench .tree-item {
+  width: calc(100% - 10px);
+  min-height: 24px;
+  border: 0;
+  background: transparent;
+  color: var(--paper);
+  text-align: left;
+  gap: 6px;
+  white-space: nowrap;
+}
+.app.intellij-workbench .tree-item:hover { background: #fff4e812; }
+.app.intellij-workbench .tree-item.on { background: var(--glass-selection); }
+.project-tree-chevron {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border: solid var(--muted);
+  border-width: 0 1px 1px 0;
+  transform: rotate(-45deg);
+}
+.project-tree-chevron.expanded { transform: translateY(-2px) rotate(45deg); }
+.project-tree-chevron.placeholder { visibility: hidden; }
+.project-tree-icon { display: inline-flex; flex: none; color: var(--muted); }
+.project-tree-icon.java, .tree-maven-mark { color: #a5c2f6; }
+.tree-maven-mark { font: italic 500 17px/15px var(--sans); }
+.app.intellij-workbench .structure-tool { margin: 4px; border: 1px solid var(--line); border-radius: 9px; }
+.app.intellij-workbench .structure-tool > button { display: flex; align-items: center; gap: 6px; }
+.structure-tool > button svg { flex: none; color: #a5c2f6; }
+.structure-tool > button.method svg { color: #e6a58b; }
+.app.intellij-workbench .maven-tool-actions { border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.app.intellij-workbench .maven-tool-actions > button {
+  display: inline-grid; place-items: center; width: 26px; height: 26px; padding: 0;
+}
+.maven-lifecycle summary svg, .maven-lifecycle summary .tree-maven-mark { vertical-align: text-bottom; margin-inline: 4px 6px; }
+.maven-lifecycle ul { padding-left: 24px; overflow-wrap: anywhere; }
+.maven-lifecycle .maven-goal-row {
+  display: flex; align-items: center; gap: 6px; border: 0; border-radius: 4px;
+  padding: 3px 8px; background: transparent; color: var(--paper); cursor: pointer;
+}
+.maven-lifecycle .maven-goal-row:hover { background: #fff4e812; }
+[data-workbench-theme="graphite"] { --theme-bg: #171819; --theme-side: #323435; --theme-card: #424344; --theme-text: #f6f7f2; --theme-muted: #c2c5ba; }
+[data-workbench-theme="blue"] { --theme-bg: #070a12; --theme-side: #0d1322; --theme-card: #141c30; --theme-text: #fff; --theme-muted: #94a3b8; }
+[data-workbench-theme="dark"] { --theme-bg: #08090d; --theme-side: #0e1017; --theme-card: #151822; --theme-text: #fff; --theme-muted: #9ca3af; }
+[data-workbench-theme="light"] { --theme-bg: #f5f5f7; --theme-side: #fff; --theme-card: #fff; --theme-text: #1d1d1f; --theme-muted: #646469; }
+[data-workbench-theme="glass"] { --theme-bg: #fff; --theme-side: #fff3eb; --theme-card: #ffdfcc; --theme-text: #32231d; --theme-muted: #6e5346; }
+[data-workbench-theme="pearl"] { --theme-bg: #eef0f3; --theme-side: #edf4fb; --theme-card: #e4f0ff; --theme-text: #182334; --theme-muted: #526074; }
+
+[data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench {
+  --paper: var(--theme-text);
+  --muted: var(--theme-muted);
+  --ink: var(--theme-bg);
+  --panel: var(--theme-side);
+  --panel-2: var(--theme-card);
+  --line: color-mix(in srgb, var(--theme-text) 22%, transparent);
+  --glass-panel: var(--theme-side);
+  --glass-header: var(--theme-card);
+  --glass-field: var(--theme-bg);
+  --glass-popover: var(--theme-card);
+}
+[data-workbench-theme="graphite"] { --theme-wallpaper: url('./theme-wallpapers/graphite-interior.png'); --theme-tint: #17181948; }
+[data-workbench-theme="blue"] { --theme-wallpaper: url('./theme-wallpapers/midnight-blue-backdrop.png'); --theme-tint: #070a128f; }
+[data-workbench-theme="dark"] { --theme-wallpaper: url('./theme-wallpapers/deep-charcoal-backdrop.png'); --theme-tint: #08090d85; }
+[data-workbench-theme="light"] { --theme-wallpaper: url('./theme-wallpapers/apple-light-backdrop.png'); --theme-tint: #ffffff66; }
+[data-workbench-theme="glass"] { --theme-wallpaper: url('./theme-wallpapers/frosted-glass-backdrop.png'); --theme-tint: #fffaf666; }
+[data-workbench-theme="pearl"] { --theme-wallpaper: url('./theme-wallpapers/pearl-glass-backdrop.png'); --theme-tint: #eef0f360; }
+
+[data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench.app {
+  isolation: isolate;
+  background:
+    linear-gradient(var(--theme-tint), var(--theme-tint)),
+    var(--theme-bg) var(--theme-wallpaper) center / cover no-repeat;
+  --glass-panel: linear-gradient(145deg, color-mix(in srgb, var(--theme-card) 9%, transparent), transparent 70%),
+    color-mix(in srgb, var(--theme-side) 60%, transparent);
+  --glass-header: color-mix(in srgb, var(--theme-card) 64%, transparent);
+}
+[data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(var(--theme-tint), var(--theme-tint)), var(--theme-wallpaper) center / cover no-repeat;
+  animation: workbench-wallpaper-enter 400ms ease-out both, workbench-wallpaper-drift 36s ease-in-out infinite alternate;
+}
+@keyframes workbench-wallpaper-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes workbench-wallpaper-drift {
+  from { transform: scale(1); }
+  to { transform: scale(1.045); }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench::before { animation: none; }
+}
+[data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench :is(.topbar, .stage, .code-editor, .code-gutter, .maven-panel pre, .bubble.ai pre) {
+  background: color-mix(in srgb, var(--theme-bg) var(--theme-opacity, 90%), transparent);
+  color: var(--theme-text);
+}
+[data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench .stage { background: var(--glass-panel); }
+:is([data-workbench-theme="light"], [data-workbench-theme="glass"], [data-workbench-theme="pearl"]) .app.intellij-workbench {
+  color-scheme: light;
+}
+:is([data-workbench-theme="light"], [data-workbench-theme="glass"], [data-workbench-theme="pearl"]) :is(.java-keyword, .java-type, .java-annotation) { color: #8a3818; }
+:is([data-workbench-theme="light"], [data-workbench-theme="glass"], [data-workbench-theme="pearl"]) :is(.java-method, .java-import, .java-literal) { color: #214e93; }
+:is([data-workbench-theme="light"], [data-workbench-theme="glass"], [data-workbench-theme="pearl"]) .java-string { color: #306226; }
+:is([data-workbench-theme="light"], [data-workbench-theme="glass"], [data-workbench-theme="pearl"]) .java-comment { color: #615e65; }
+[data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench .stage:has(.workbench-home) {
+  background: var(--glass-panel);
+}
+
+[data-workbench-theme="frenky-orange"] { --theme-accent: #ff7624; --theme-accent-ink: #21130d; }
+[data-workbench-theme="graphite"] { --theme-accent: #d9ed52; --theme-accent-ink: #202508; }
+[data-workbench-theme="blue"] { --theme-accent: #3b82f6; --theme-accent-ink: #091322; }
+[data-workbench-theme="dark"] { --theme-accent: #8b5cf6; --theme-accent-ink: #140d20; }
+[data-workbench-theme="light"] { --theme-accent: #0071e3; --theme-accent-ink: #fff; }
+[data-workbench-theme="glass"] { --theme-accent: #a63c12; --theme-accent-ink: #fff; }
+[data-workbench-theme="pearl"] { --theme-accent: #285ac5; --theme-accent-ink: #fff; }
+
+[data-theme="warm-glass"] { --custom-accent: #ff7624; }
+[data-theme="cosmic"] { --custom-accent: #aac8fa; }
+[data-theme="copper"] { --custom-accent: #d97706; }
+[data-theme="emerald"] { --custom-accent: #97deb7; }
+[data-theme="cyberpunk"] { --custom-accent: #dac0ff; }
+[data-theme="midnight"] { --custom-accent: #c7d1df; }
+
+[data-workbench-theme] .app.intellij-workbench.app {
+  --glass-action: var(--custom-accent, var(--theme-accent, #ff7624));
+  --glass-action-ink: var(--custom-accent-ink, var(--theme-accent-ink, #21130d));
+  --glass-selection: color-mix(in srgb, var(--glass-action) 17%, transparent);
+  --glass-edge: color-mix(in srgb, var(--glass-action) 48%, transparent);
+  --copper: var(--glass-action);
+  --copper-2: color-mix(in srgb, var(--glass-action) 68%, var(--paper));
+}
+[data-theme]:not([data-theme="theme-default"]) { --custom-accent-ink: #161416; }
+[data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench :is(.side, .chat, .maven-tool-window, .maven-panel, .stage) {
+  backdrop-filter: blur(12px);
+}
+[data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench .settings-panel-card {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--theme-card) 93%, transparent),
+    color-mix(in srgb, var(--theme-side) 91%, transparent));
+  color: var(--paper);
+  border-color: var(--line);
+}
+[data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench .settings-nav {
+  background: color-mix(in srgb, var(--theme-side) 62%, transparent);
+}
+[data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench .settings-panel-card :is(.theme-chip, .toggle-option, .settings-nav-item):not(.active) {
+  color: var(--paper);
+}
+[data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench .settings-panel-card :is(.toggle-option.active, .theme-chip.active, .settings-nav-item.active) {
+  background: var(--glass-selection);
+  border-color: var(--glass-edge);
+  color: var(--paper);
+}

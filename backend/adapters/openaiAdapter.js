@@ -11,11 +11,13 @@ async function runOpenAIAgent({
   token,
   model,
   userMessage,
+  history = [],
+  signal,
   mode,
   context,
   systemPrompt,
   toolRegistry,
-  helpers,
+  endpoint = 'https://api.openai.com/v1/chat/completions',
   onEvent
 }) {
   if (!token || !String(token).trim()) {
@@ -33,9 +35,9 @@ async function runOpenAIAgent({
     { role: 'system', content: systemPrompt(mode) }
   ]
   if (context) messages.push({ role: 'user', content: `Current editor context:\n${context}` })
-  messages.push({ role: 'user', content: userMessage })
+  messages.push(...history, { role: 'user', content: userMessage })
 
-  const tools = (mode === 'agent' || mode === 'editor') ? toolRegistry.toOpenAITools() : undefined
+  const tools = mode === 'agent' ? toolRegistry?.toOpenAITools() : undefined
 
   for (let step = 0; step < 8; step++) {
     const body = {
@@ -52,12 +54,13 @@ async function runOpenAIAgent({
 
     let resp
     try {
-      resp = await fetch('https://api.openai.com/v1/chat/completions', {
+      resp = await fetch(endpoint, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${cleanToken}`,
           'Content-Type': 'application/json'
         },
+        signal,
         body: JSON.stringify(body)
       })
     } catch (err) {
@@ -146,6 +149,8 @@ async function runOpenAIAgent({
       }))
     })
 
+    if (!tools) throw new Error('Workspace tools are unavailable in this mode.')
+
     // Execute each tool via the unified Tool Registry
     for (const call of toolCalls) {
       let args = {}
@@ -155,7 +160,7 @@ async function runOpenAIAgent({
       onEvent('tool.started', { id: call.id, name: call.name, args })
       onEvent('tool', { name: call.name, args, status: 'running' })
 
-      const output = toolRegistry.executeTool(call.name, args, helpers)
+      const output = toolRegistry.executeTool(call.name, args)
 
       onEvent('tool.completed', { id: call.id, name: call.name, args, output: String(output).slice(0, 4000) })
       onEvent('tool', { name: call.name, args, status: 'done', output: String(output).slice(0, 4000) })

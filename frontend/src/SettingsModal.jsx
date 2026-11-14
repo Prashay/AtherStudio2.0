@@ -4,7 +4,8 @@ export const SETTINGS_KEY = 'aether.settings.v1'
 
 export const DEFAULT_SETTINGS = {
   userName: '',
-  theme: 'cosmic',
+  theme: 'theme-default',
+  workbenchTheme: 'frenky-orange',
   uiDensity: 'comfortable',
   defaultModel: 'aether-spark',
   customInstructions: '',
@@ -24,7 +25,12 @@ export function loadSettings() {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY)
     if (!raw) return { ...DEFAULT_SETTINGS }
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) }
+    const saved = JSON.parse(raw)
+    const loaded = { ...DEFAULT_SETTINGS, ...saved }
+    if (loaded.workbenchTheme !== 'frenky-orange' && !saved.themeAccentCustomized) {
+      loaded.theme = 'theme-default'
+    }
+    return loaded
   } catch {
     return { ...DEFAULT_SETTINGS }
   }
@@ -67,7 +73,11 @@ export function SettingsModal({
 
   const update = (key, val) => {
     setLocalSettings((prev) => {
+      if (key === 'workbenchTheme' && prev.workbenchTheme !== val) {
+        return { ...prev, workbenchTheme: val, theme: 'theme-default', themeAccentCustomized: false }
+      }
       const next = { ...prev, [key]: val }
+      if (key === 'theme') next.themeAccentCustomized = val !== 'theme-default'
       return next
     })
   }
@@ -199,10 +209,34 @@ export function SettingsModal({
                 </div>
 
                 <div className="settings-field">
-                  <label>Color Accent &amp; Aura Theme</label>
-                  <p className="field-desc">Personalize the studio atmospheric lighting and highlights.</p>
+                  <label>Workbench Theme</label>
                   <div className="theme-grid">
                     {[
+                      ['frenky-orange', 'Frenky Orange', '#292523'],
+                      ['graphite', 'Graphite Glass', '#424344'],
+                      ['blue', 'Midnight Blue', '#141c30'],
+                      ['dark', 'Deep Charcoal', '#151822'],
+                      ['light', 'Apple Light', '#f5f5f7'],
+                      ['glass', 'Frosted Glass', '#ffdfcc'],
+                      ['pearl', 'Pearl Glass', '#e4f0ff']
+                    ].map(([id, label, color]) => {
+                      const active = (localSettings.workbenchTheme || DEFAULT_SETTINGS.workbenchTheme) === id
+                      return <button key={id} type="button" className={`theme-chip ${active ? 'active' : ''}`}
+                        aria-pressed={active} onClick={() => update('workbenchTheme', id)}>
+                        <span className="theme-swatch" style={{ background: color }} />
+                        <span className="theme-name">{label}</span>
+                      </button>
+                    })}
+                  </div>
+                </div>
+
+                <div className="settings-field">
+                  <label>Color Accent &amp; Aura Theme</label>
+                  <p className="field-desc">Use the theme’s colors or choose your own accent. The theme keeps its wallpaper and surface effects.</p>
+                  <div className="theme-grid">
+                    {[
+                      { id: 'theme-default', label: 'Theme Default', color: 'conic-gradient(#d9ed52, #3b82f6, #ff7624, #d9ed52)' },
+                      { id: 'warm-glass', label: 'Warm Glass', color: '#ff9a54' },
                       { id: 'cosmic', label: 'Cosmic Blue', color: '#3b82f6', bg: '#060913' },
                       { id: 'copper', label: 'Amber Copper', color: '#d97706', bg: '#100c08' },
                       { id: 'emerald', label: 'Neon Emerald', color: '#10b981', bg: '#04130d' },
@@ -212,7 +246,7 @@ export function SettingsModal({
                       <button
                         key={th.id}
                         type="button"
-                        className={`theme-chip ${(localSettings.theme || 'cosmic') === th.id ? 'active' : ''}`}
+                        className={`theme-chip ${(localSettings.theme || DEFAULT_SETTINGS.theme) === th.id ? 'active' : ''}`}
                         onClick={() => update('theme', th.id)}
                         style={{ '--chip-accent': th.color }}
                       >
@@ -430,7 +464,7 @@ export function SettingsModal({
                       Test
                     </button>
                   </div>
-                  <span className="field-hint">Enables Gemini 2.5 Flash, Gemini 1.5 Pro, and advanced models.</span>
+                  <span className="field-hint">Enables Gemini 3.8 Flash, Gemini 3.1 Pro, and advanced models.</span>
                 </div>
 
                 <div className="settings-field">

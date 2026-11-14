@@ -7,12 +7,19 @@
   "scripts": {
     "start": "node start.js",
     "dev": "node start.js",
+    "dev:web": "node start.js --no-electron",
+    "electron": "electron electron/main.cjs",
+    "electron:dev": "node start.js",
     "install:all": "npm --prefix backend install && npm --prefix frontend install && npm install",
     "build": "npm --prefix frontend install && npm --prefix frontend run build",
-    "electron:dev": "node start.js & electron .",
+    "electron:build": "npm run build && electron-builder --win dir",
+    "electron:build:dir": "npm run build && electron-builder --win dir",
+    "electron:build:zip": "npm run build && electron-builder --win zip",
     "electron:build:win": "npm run build && electron-builder --win",
     "electron:build:mac": "npm run build && electron-builder --mac",
-    "electron:build:all": "npm run build && electron-builder --win --mac"
+    "electron:build:all": "npm run build && electron-builder --win --mac",
+    "desktop:build": "npm run desktop:typecheck && electron-vite build",
+    "desktop:typecheck": "tsc -p tsconfig.desktop.json"
   },
   "author": "Arther Studio Team",
   "build": {
@@ -21,20 +28,36 @@
     "directories": {
       "output": "dist_electron"
     },
+    "asar": true,
+    "asarUnpack": [
+      "backend/**/*",
+      "frontend/dist/**/*"
+    ],
     "files": [
       "electron/**/*",
       "backend/**/*",
-      "frontend/dist/**/*"
+      "frontend/dist/**/*",
+      "package.json"
     ],
     "win": {
       "target": [
         {
-          "target": "nsis",
-          "arch": ["x64"]
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
         },
         {
-          "target": "portable",
-          "arch": ["x64"]
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico"
@@ -43,19 +66,45 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "category": "public.app-category.developer-tools",
       "icon": "build/icon.png"
+    },
+    "extraMetadata": {
+      "main": "electron/main.cjs"
     }
   },
   "devDependencies": {
-    "electron": "^33.2.1",
-    "electron-builder": "^25.1.8"
+    "@types/node": "^24",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "electron": "45.3.2",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^5",
+    "typescript": "^5.9",
+    "vite": "^7"
+  },
+  "dependencies": {
+    "@vscode/codicons": "^0.0.46-24",
+    "cors": "^2.8.6",
+    "express": "^5.3.0",
+    "lucide-react": "^1.73.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-resizable-panels": "^2.1.9",
+    "zod": "^4",
+    "zustand": "^5.1.0"
   }
 }

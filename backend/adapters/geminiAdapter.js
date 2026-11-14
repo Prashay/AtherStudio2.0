@@ -13,15 +13,35 @@ function geminiPartsToText(parts) {
   return (parts || []).filter((p) => p.text).map((p) => p.text).join('')
 }
 
+function normalizeGeminiModel(model) {
+  if (!model) return 'gemini-3.8-flash'
+  let m = String(model).trim()
+  if (m.startsWith('models/')) m = m.slice(7)
+  if (m === 'gemini-3.8-flash-lite' || m === 'gemini-3.5-flash-lite' || m === 'gemini-2.0-flash-lite' || m.includes('flash-lite')) {
+    return 'gemini-3.5-flash-lite'
+  }
+  if (m === 'gemini-3.8-flash' || m === 'gemini-3.6-flash' || m === 'gemini-2.0-flash' || m.includes('2.0-flash') || m.includes('3.6-flash')) {
+    return 'gemini-3.8-flash'
+  }
+  if (m === 'gemini-3.1-pro' || m === 'gemini-1.5-pro' || m.includes('3.1-pro')) {
+    return 'gemini-3.1-pro-preview'
+  }
+  if (m.includes('thinking')) {
+    return 'gemini-3.8-flash'
+  }
+  return m
+}
+
 async function runGeminiAgent({
   token,
   model,
   userMessage,
+  history = [],
+  signal,
   mode,
   context,
   systemPrompt,
   toolRegistry,
-  helpers,
   onEvent
 }) {
   if (!token || !String(token).trim()) {
@@ -32,22 +52,19 @@ async function runGeminiAgent({
   }
 
   const cleanToken = String(token).trim()
-  let m = model || 'gemini-2.0-flash'
-  if (m.includes('thinking-exp')) m = 'gemini-2.0-flash'
+  let activeModel = normalizeGeminiModel(model)
 
-  const contents = []
   const intro = systemPrompt(mode) + (context ? `\n\nCurrent editor context:\n${context}` : '')
-  contents.push({
-    role: 'user',
-    parts: [{ text: `${intro}\n\nUser request:\n${userMessage}` }]
-  })
-
-  const tools = (mode === 'agent' || mode === 'editor') ? toolRegistry.toGeminiTools() : undefined
+  const contents = [...history, { role: 'user', content: userMessage }].map(({ role, content }) => ({
+    role: role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: content }]
+  }))
+  const tools = mode === 'agent' ? toolRegistry?.toGeminiTools() : undefined
 
   for (let step = 0; step < 8; step++) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${m}:streamGenerateContent?alt=sse&key=${encodeURIComponent(cleanToken)}`
-    const body = { contents }
-    if (!m.includes('thinking')) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${activeModel}:streamGenerateContent?alt=sse&key=${encodeURIComponent(cleanToken)}`
+    const body = { contents, systemInstruction: { parts: [{ text: intro }] } }
+    if (!activeModel.includes('thinking') && !activeModel.includes('flash-lite')) {
       body.generationConfig = { temperature: 0.3 }
     }
     if (tools && tools.length) {
@@ -59,25 +76,39 @@ async function runGeminiAgent({
       resp = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal,
         body: JSON.stringify(body)
       })
     } catch (err) {
       const cleanErr = sanitizeError(`Network error connecting to Gemini: ${err.message}`)
-      onEvent('agent.error', { error: cleanErr, provider: 'gemini', model: m })
+      onEvent('agent.error', { error: cleanErr, provider: 'gemini', model: activeModel })
       onEvent('error', { error: cleanErr })
       return
     }
 
     if (!resp.ok) {
       let errMsg = `Gemini API returned HTTP ${resp.status}`
+      let isNotFound = resp.status === 404
       try {
         const errJson = await resp.json()
         if (errJson.error?.message) {
           errMsg = errJson.error.message
+          if (errMsg.includes('not found') || errMsg.includes('not supported')) {
+            isNotFound = true
+          }
         }
       } catch {}
+
+      // If the model was not found and we haven't tried gemini-3.8-flash yet, fallback to gemini-3.8-flash
+      if (isNotFound && activeModel !== 'gemini-3.8-flash') {
+        console.warn(`[Gemini] Model ${activeModel} not supported for generateContent, retrying with gemini-3.8-flash`)
+        activeModel = 'gemini-3.8-flash'
+        step--
+        continue
+      }
+
       const safeErr = sanitizeError(errMsg)
-      onEvent('agent.error', { error: safeErr, provider: 'gemini', model: m })
+      onEvent('agent.error', { error: safeErr, provider: 'gemini', model: activeModel })
       onEvent('error', { error: safeErr })
       return
     }
@@ -129,6 +160,8 @@ async function runGeminiAgent({
     // Record model's function calls into history
     contents.push({ role: 'model', parts: allCandidateParts })
 
+    if (!tools) throw new Error('Workspace tools are unavailable in this mode.')
+
     // Execute each tool via the unified Tool Registry
     const responseParts = []
     for (const call of fnCalls) {
@@ -139,7 +172,7 @@ async function runGeminiAgent({
       onEvent('tool.started', { name, args })
       onEvent('tool', { name, args, status: 'running' })
 
-      const output = toolRegistry.executeTool(name, args, helpers)
+      const output = toolRegistry.executeTool(name, args)
 
       onEvent('tool.completed', { name, args, output: String(output).slice(0, 4000) })
       onEvent('tool', { name, args, status: 'done', output: String(output).slice(0, 4000) })

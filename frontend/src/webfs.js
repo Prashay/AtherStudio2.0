@@ -18,7 +18,12 @@ export async function pickNativeDirectory() {
   return handle
 }
 
-export async function buildTreeFromHandle(dirHandle, relPath = '', depth = 0, maxDepth = 5) {
+export async function buildTreeFromHandle(dirHandle, relPath = '', depth = 0, maxDepth = 12) {
+  if (depth === 0 && relPath) {
+    for (const part of relPath.split('/').filter(Boolean)) {
+      dirHandle = await dirHandle.getDirectoryHandle(part)
+    }
+  }
   const children = []
   if (depth < maxDepth) {
     const entries = []
@@ -27,7 +32,8 @@ export async function buildTreeFromHandle(dirHandle, relPath = '', depth = 0, ma
         if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) continue
         entries.push(entry)
       }
-    } catch {
+    } catch (error) {
+      if (depth === 0) throw error
       return { name: dirHandle.name, path: relPath, type: 'dir', children: [] }
     }
 
@@ -121,33 +127,34 @@ export async function searchInHandle(dirHandle, query, maxHits = 40) {
 }
 
 // Fallback Virtual Workspace for browsers without File System Access API
-export function buildVirtualTreeFromFiles(fileList) {
-  const root = { name: 'project', path: '', type: 'dir', children: [] }
+export function buildVirtualTreeFromFiles(files) {
+  const name = files[0]?.webkitRelativePath?.split('/')[0] || 'Imported files'
+  const root = { name, path: '', type: 'dir', children: [] }
   const fileMap = new Map()
+  const directories = new Map([['', root]])
 
-  for (const file of Array.from(fileList)) {
-    const rel = file.webkitRelativePath || file.name
-    const parts = rel.split('/')
-    if (parts.some((p) => SKIP_DIRS.has(p))) continue
-
-    let curr = root
-    for (let i = 0; i < parts.length - 1; i++) {
-      const part = parts[i]
-      if (i === 0) root.name = part
-      let next = curr.children.find((c) => c.name === part && c.type === 'dir')
-      if (!next) {
-        const currRel = parts.slice(1, i + 1).join('/')
-        next = { name: part, path: currRel, type: 'dir', children: [] }
-        curr.children.push(next)
+  for (const file of files) {
+    const parts = file.webkitRelativePath ? file.webkitRelativePath.split('/').slice(1) : [file.name]
+    if (parts.some((part) => SKIP_DIRS.has(part))) continue
+    const path = parts.join('/')
+    if (fileMap.has(path)) continue
+    let parent = root
+    let directoryPath = ''
+    for (const part of parts.slice(0, -1)) {
+      directoryPath = directoryPath ? `${directoryPath}/${part}` : part
+      if (!directories.has(directoryPath)) {
+        const node = { name: part, path: directoryPath, type: 'dir', children: [] }
+        parent.children.push(node)
+        directories.set(directoryPath, node)
       }
-      curr = next
+      parent = directories.get(directoryPath)
     }
-
-    const fileName = parts[parts.length - 1]
-    const filePath = parts.slice(1).join('/') || fileName
-    curr.children.push({ name: fileName, path: filePath, type: 'file' })
-    fileMap.set(filePath, file)
+    parent.children.push({ name: file.name, path, type: 'file' })
+    fileMap.set(path, file)
   }
 
+  for (const directory of directories.values()) {
+    directory.children.sort((a, b) => a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1)
+  }
   return { root, fileMap }
 }

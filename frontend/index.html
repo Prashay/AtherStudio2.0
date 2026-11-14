@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#0c1016" />
+    <meta name="theme-color" content="#171516" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -17,10 +17,114 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@380;500;650&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Outfit:wght@380;500;650&family=Roboto:wght@400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      /* Apple Style App Opening Loader */
+      #apple-app-loader {
+        position: fixed;
+        inset: 0;
+        background: #0c1016;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 999999;
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .apple-loader-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        animation: appleFadeIn 0.4s ease-out;
+      }
+      @keyframes appleFadeIn {
+        from { opacity: 0; transform: scale(0.96); }
+        to { opacity: 1; transform: scale(1); }
+      }
+      .apple-loader-icon {
+        width: 76px;
+        height: 76px;
+        border-radius: 18px;
+        background: #151821;
+        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 18px;
+        overflow: hidden;
+        animation: applePulse 2.8s ease-in-out infinite alternate;
+      }
+      @keyframes applePulse {
+        0% { transform: translateY(0); box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6); }
+        100% { transform: translateY(-4px); box-shadow: 0 22px 42px rgba(0, 0, 0, 0.75); }
+      }
+      .apple-loader-icon img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .apple-loader-title {
+        font-size: 21px;
+        font-weight: 600;
+        letter-spacing: -0.4px;
+        color: #f1f5f9;
+        margin-bottom: 5px;
+      }
+      .apple-loader-sub {
+        font-size: 13px;
+        color: #94a3b8;
+        letter-spacing: 0.1px;
+        margin-bottom: 24px;
+      }
+      .apple-progress-bar {
+        width: 140px;
+        height: 3.5px;
+        background: rgba(255, 255, 255, 0.12);
+        border-radius: 999px;
+        overflow: hidden;
+        position: relative;
+        margin-bottom: 14px;
+      }
+      .apple-progress-bar::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 40%;
+        background: linear-gradient(90deg, #94a3b8, #ffffff, #94a3b8);
+        border-radius: 999px;
+        animation: appleIndeterminate 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+      @keyframes appleIndeterminate {
+        0% { left: -40%; width: 30%; }
+        50% { left: 35%; width: 50%; }
+        100% { left: 100%; width: 30%; }
+      }
+      .apple-loader-status {
+        font-size: 11px;
+        color: #64748b;
+        font-weight: 500;
+        letter-spacing: 0.2px;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="apple-app-loader">
+        <div class="apple-loader-card">
+          <div class="apple-loader-icon">
+            <img src="./icon.png" alt="Arther Studio" onerror="this.src='./favicon.jpg'" />
+          </div>
+          <div class="apple-loader-title">Arther Studio</div>
+          <div class="apple-loader-sub">Intelligent AI Coding Studio</div>
+          <div class="apple-progress-bar"></div>
+          <div class="apple-loader-status">Starting workspace...</div>
+        </div>
+      </div>
+    </div>
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {

@@ -1,4 +1,10 @@
+import TreeIcon from './TreeIcon.jsx'
+import { javaOutline } from './javaOutline.js'
+import MavenPanel, { MavenLifecycle } from './MavenPanel.jsx'
+import SearchEverywhere from './SearchEverywhere.jsx'
+import CodeEditor from './CodeEditor.jsx'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { QRCodeSVG, downloadQRCodePNG } from './qrcode.jsx'
 import {
   isNativeFSSupported,
@@ -14,10 +20,49 @@ import { MarkdownViewer } from './MarkdownViewer.jsx'
 import { SettingsModal, loadSettings, saveSettings } from './SettingsModal.jsx'
 import { TaskHistoryModal, loadTaskHistory, saveTaskHistory } from './TaskHistoryModal.jsx'
 
+const iconPaths = {
+  save: 'M5 3h12l4 4v14H3V3z M7 3v6h10V3 M7 21v-8h10v8',
+  download: 'M12 3v12m-5-5 5 5 5-5 M4 16v5h16v-5',
+  chat: 'M4 4h16v12H9l-5 4z M8 9h8m-8 3h5',
+  folder: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M12 10v7m-3-3 3 3 3-3',
+  files: 'M7 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9m-3 4h5l4 4v8a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2z M16 7v4h4',
+  server: 'M4 4h16v6H4z M4 14h16v6H4z M8 7h.01M8 17h.01M12 7h4m-4 10h4',
+  search: 'M16 10a6 6 0 1 1-12 0 6 6 0 0 1 12 0z M14.5 14.5 21 21',
+  robot: 'M5 8h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z M12 8V4m-2 0h4M8 13h.01m8 0h.01m-7 4h6',
+  key: 'M14 10a5 5 0 1 0-3 3L4 20h4v-3h3l3-3m3-7h.01',
+  token: 'M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0z M12 7v10m2-8h-3a1.5 1.5 0 0 0 0 3h2a1.5 1.5 0 0 1 0 3h-3'
+}
+
+function WorkbenchIcon({ name }) {
+  return (
+    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round">
+      <path d={iconPaths[name]} />
+    </svg>
+  )
+}
+
 const STORE_KEY = 'aether.vault'
 const MODEL_KEY = 'aether.model'
 const USER_KEY = 'aether.username'
 const WELCOME_SEEN_KEY = 'aether.welcome_seen'
+
+function lastFileKey(root) {
+  const normalized = /^[a-z]:[\\/]|^\\\\/i.test(root) ? root.replace(/\\/g, '/').toLowerCase() : root
+  return 'aether.lastFile:' + normalized
+}
+
+async function restoreLastFile(root, signal) {
+  try {
+    const path = localStorage.getItem(lastFileKey(root)) || localStorage.getItem('aether.lastFile:' + root)
+    if (!path) return null
+    const response = await fetch('/api/file?path=' + encodeURIComponent(path), { signal, cache: 'no-store' })
+    if (!response.ok) return null
+    const file = await response.json()
+    return file.type === 'file' && typeof file.content === 'string' ? { path, content: file.content } : null
+  } catch {
+    return null
+  }
+}
 
 function loadVault() {
   try {
@@ -39,7 +84,7 @@ const DEFAULT_MODELS = {
       blurb: 'Fast replies',
       tier: 'free',
       provider: 'pollinations',
-      remote: 'openai-fast',
+      remote: 'openai/gpt-4o-mini',
       capabilities: {
         streaming: true,
         toolCalling: true,
@@ -55,7 +100,7 @@ const DEFAULT_MODELS = {
       blurb: 'Balanced chat',
       tier: 'free',
       provider: 'pollinations',
-      remote: 'openai-fast',
+      remote: 'openai/gpt-5-nano',
       capabilities: {
         streaming: true,
         toolCalling: true,
@@ -71,7 +116,7 @@ const DEFAULT_MODELS = {
       blurb: 'Code-focused',
       tier: 'free',
       provider: 'pollinations',
-      remote: 'openai-fast',
+      remote: 'qwen/qwen3-coder-30b-a3b-instruct',
       capabilities: {
         streaming: true,
         toolCalling: true,
@@ -90,7 +135,7 @@ const DEFAULT_MODELS = {
       blurb: 'Fastest answers',
       tier: 'premium',
       provider: 'gemini',
-      remote: 'gemini-2.0-flash-lite',
+      remote: 'gemini-3.5-flash-lite',
       capabilities: {
         streaming: true,
         toolCalling: true,
@@ -101,12 +146,12 @@ const DEFAULT_MODELS = {
       }
     },
     {
-      id: 'gemini-3.6-flash',
-      label: '3.6 Flash',
+      id: 'gemini-3.8-flash',
+      label: '3.8 Flash',
       blurb: 'All-around help',
       tier: 'premium',
       provider: 'gemini',
-      remote: 'gemini-2.0-flash',
+      remote: 'gemini-3.8-flash',
       capabilities: {
         streaming: true,
         toolCalling: true,
@@ -122,7 +167,7 @@ const DEFAULT_MODELS = {
       blurb: 'Advanced reasoning',
       tier: 'premium',
       provider: 'gemini',
-      remote: 'gemini-1.5-pro',
+      remote: 'gemini-3.1-pro-preview',
       capabilities: {
         streaming: true,
         toolCalling: true,
@@ -138,7 +183,7 @@ const DEFAULT_MODELS = {
       blurb: 'Complex problem solving',
       tier: 'premium',
       provider: 'gemini',
-      remote: 'gemini-2.0-flash',
+      remote: 'gemini-3.8-flash',
       capabilities: {
         streaming: true,
         toolCalling: true,
@@ -199,33 +244,6 @@ const DEFAULT_MODELS = {
       }
     }
   ]
-}
-
-function MiniRobot({ mode }) {
-  return (
-    <div className={`mini-bot ${mode}`} aria-hidden="true">
-      <div className="orbit-ring" />
-      <div className="orbit-dot" />
-      <div className="bot">
-        <div className="antenna">
-          <span className="bead" />
-        </div>
-        <div className="head">
-          <div className="visor">
-            <span className="eye" />
-            <span className="eye" />
-          </div>
-        </div>
-        <div className="torso">
-          <span className="core" />
-        </div>
-        <div className="arm left" />
-        <div className="arm right" />
-        <div className="leg left" />
-        <div className="leg right" />
-      </div>
-    </div>
-  )
 }
 
 function AppleAiOrb({ size = 150 }) {
@@ -415,25 +433,53 @@ function AppleAiOrb({ size = 150 }) {
   )
 }
 
-function FileGlyph({ type, open }) {
-  if (type === 'dir') return <span className="ico">{open ? 'v' : '>'}</span>
-  return <span className="ico">.</span>
-}
-
-function TreeNode({ node, depth, active, onOpen, openDirs, toggleDir }) {
+function TreeNode({ node, depth, active, onOpen, openDirs, toggleDir, loadDirectory, onProjectMenu, compactPackages, foldersFirst }) {
   const isDir = node.type === 'dir'
+  let displayNode = node
+  let label = node.name.endsWith('.java') && !isDir ? node.name.slice(0, -5) : node.name
+  if (compactPackages && isDir && /(?:^|\/)src\/(?:main|test)\/java\/.+/.test(node.path)) {
+    while (displayNode.children?.length === 1 && displayNode.children[0].type === 'dir') {
+      displayNode = displayNode.children[0]
+      label += '.' + displayNode.name
+    }
+  }
+  const packageFolder = isDir && /(?:^|\/)src\/(?:main|test)\/java\//.test(node.path)
+  const icon = isDir ? (packageFolder ? 'package' : 'folder')
+    : node.name === 'pom.xml' ? 'maven' : node.name.endsWith('.java') ? 'java' : 'file'
   const open = openDirs.has(node.path)
+  const needsLoad = isDir && open && !displayNode.children?.length && !displayNode.directoryLoaded
+  const directoryPath = displayNode.path
+  const [loadError, setLoadError] = useState(false)
+  useEffect(() => {
+    if (!needsLoad || !loadDirectory) return
+    const controller = new AbortController()
+    setLoadError(false)
+    loadDirectory(directoryPath, controller.signal).catch(() => {
+      if (!controller.signal.aborted) setLoadError(true)
+    })
+    return () => controller.abort()
+  }, [needsLoad, directoryPath, loadDirectory])
+
   return (
     <div>
-      <div
+      <button
+        type="button"
+        aria-expanded={isDir ? open : undefined}
+        aria-current={!isDir && active === node.path ? "true" : undefined}
+        data-project-path={node.path}
         className={`tree-item ${active === node.path ? 'on' : ''}`}
-        style={{ paddingLeft: 6 + depth * 10 }}
+        style={{ paddingLeft: 7 + depth * 14 }}
         onClick={() => (isDir ? toggleDir(node.path) : onOpen(node.path))}
+        onContextMenu={(event) => onProjectMenu(event, displayNode)}
       >
-        <FileGlyph type={node.type} open={open} />
-        <span>{node.name}</span>
-      </div>
-      {isDir && open && node.children?.map((child) => (
+        <span aria-hidden="true" className={`project-tree-chevron ${isDir ? '' : 'placeholder'} ${open ? 'expanded' : ''}`} />
+        <span className={`project-tree-icon ${icon}`}><TreeIcon name={icon} /></span>
+        <span title={displayNode.path}>{label}</span>
+      </button>
+      {needsLoad && loadDirectory && <div className="hint" style={{ paddingLeft: 21 + depth * 14 }} role="status">
+        {loadError ? 'Could not load folder. Collapse and reopen to retry.' : 'Loading folder…'}
+      </div>}
+      {isDir && open && (foldersFirst ? displayNode.children : displayNode.children?.slice().sort((a, b) => a.name.localeCompare(b.name)))?.map((child) => (
         <TreeNode
           key={child.path || child.name}
           node={child}
@@ -442,59 +488,113 @@ function TreeNode({ node, depth, active, onOpen, openDirs, toggleDir }) {
           onOpen={onOpen}
           openDirs={openDirs}
           toggleDir={toggleDir}
+          loadDirectory={loadDirectory}
+          onProjectMenu={onProjectMenu}
+          compactPackages={compactPackages}
+          foldersFirst={foldersFirst}
         />
       ))}
     </div>
   )
 }
 
-async function parseSse(response, onEvent) {
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let buf = ''
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buf += decoder.decode(value, { stream: true })
-    const chunks = buf.split('\n\n')
-    buf = chunks.pop() || ''
-    for (const chunk of chunks) {
-      const lines = chunk.split('\n')
-      let event = 'message'
-      let data = ''
-      for (const line of lines) {
-        if (line.startsWith('event:')) event = line.slice(6).trim()
-        if (line.startsWith('data:')) data += line.slice(5).trim()
-      }
-      if (data) {
-        try { onEvent(event, JSON.parse(data)) } catch { onEvent(event, { raw: data }) }
-      }
-    }
-  }
-}
-
 export default function App() {
   const [mode, setMode] = useState(() => {
     try {
       const param = new URLSearchParams(window.location.search).get('mode')
-      if (param && ['agent', 'chat', 'editor'].includes(param)) return param
+      if (param === 'agent' || param === 'editor') return param
     } catch {}
-    return 'agent'
+    return 'editor'
   })
   const [tree, setTree] = useState(null)
   const [openDirs, setOpenDirs] = useState(() => new Set(['']))
   const [tabs, setTabs] = useState([])
   const [active, setActive] = useState('')
   const [dirty, setDirty] = useState({})
+  const [recentProjects, setRecentProjects] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('aether.recentProjects') || '[]')
+      return Array.isArray(stored) ? stored.filter((item) => typeof item?.root === 'string' && typeof item.name === 'string') : []
+    } catch { return [] }
+  })
+  const [revealPath, setRevealPath] = useState(null)
+  const [launchTarget, setLaunchTarget] = useState('')
+  const [launchCatalog, setLaunchCatalog] = useState({ applications: [], jdks: [] })
+  const [runLaunch, setRunLaunch] = useState(0)
+  const [javaBreakpoints, setJavaBreakpoints] = useState({})
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [terminalOpen, setTerminalOpen] = useState(false)
+  const [activeMenu, setActiveMenu] = useState(null)
+  const [projectMenu, setProjectMenu] = useState(null)
+  const [closedEditorFiles, setClosedEditorFiles] = useState([])
+  const editorTabStrip = useRef(null)
+  const [tabStripWidth, setTabStripWidth] = useState(0)
+  const [tabPopup, setTabPopup] = useState(null)
+  const tabPopupRef = useRef(null)
+  const tabPopupTrigger = useRef(null)
+  useEffect(() => {
+    const strip = editorTabStrip.current
+    if (!strip) return
+    const sync = () => setTabStripWidth(strip.clientWidth)
+    const observer = new ResizeObserver(sync)
+    observer.observe(strip)
+    sync()
+    return () => observer.disconnect()
+  })
+  useEffect(() => {
+    if (!tabPopup) return
+    const dismiss = (event) => {
+      if (event.type === 'keydown' && event.key !== 'Escape') return
+      if (event.type === 'pointerdown' && (tabPopupRef.current?.contains(event.target) || tabPopupTrigger.current?.contains(event.target))) return
+      setTabPopup(null)
+      if (event.type === 'keydown') tabPopupTrigger.current?.focus()
+    }
+    document.addEventListener('pointerdown', dismiss)
+    document.addEventListener('keydown', dismiss)
+    window.addEventListener('resize', dismiss)
+    return () => {
+      document.removeEventListener('pointerdown', dismiss)
+      document.removeEventListener('keydown', dismiss)
+      window.removeEventListener('resize', dismiss)
+    }
+  }, [tabPopup])
+  const [pendingDelete, setPendingDelete] = useState(null)
+  const deleteDialog = useRef(null)
+  const [projectViewPosition, setProjectViewPosition] = useState(null)
+  const projectViewButton = useRef(null)
+  const [compactPackages, setCompactPackages] = useState(true)
+  const [foldersFirst, setFoldersFirst] = useState(true)
+  const expandingProject = useRef(null)
+  const [newMenuOpen, setNewMenuOpen] = useState(false)
+  const [mavenSideOpen, setMavenSideOpen] = useState(false)
+  const [launchRequest, setLaunchRequest] = useState(null)
+  const [mavenOptions, setMavenOptions] = useState({ offline: false, skipTests: false })
+  const [structureOpen, setStructureOpen] = useState(false)
+  const [editorJump, setEditorJump] = useState(null)
+  const [mavenOpen, setMavenOpen] = useState(false)
+  const [searchEverywhere, setSearchEverywhere] = useState(false)
+  const lastShift = useRef(0)
   const [search, setSearch] = useState('')
   const [hits, setHits] = useState([])
   const [messages, setMessages] = useState([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  const [streamText, setStreamText] = useState('')
+  const [editorNotice, setEditorNotice] = useState('')
+  const savingRef = useRef(false)
+  const requestRef = useRef(null)
+  const workspaceRef = useRef(null)
+  const workspaceRestore = useRef(null)
+
   const [vaultOpen, setVaultOpen] = useState(false)
   const [vaultTab, setVaultTab] = useState('openai')
   const [catalog, setCatalog] = useState(DEFAULT_MODELS)
-  const [modelId, setModelId] = useState(() => localStorage.getItem(MODEL_KEY) || 'aether-spark')
+  const [modelId, setModelId] = useState(() => {
+    const saved = localStorage.getItem(MODEL_KEY)
+    if (saved === 'gemini-3.6-flash' || saved === 'gemini-2.0-flash') return 'gemini-3.8-flash'
+    if (saved === 'gemini-3.8-flash-lite' || saved === 'gemini-2.0-flash-lite') return 'gemini-3.5-flash-lite'
+    return saved || 'aether-spark'
+  })
   const allModels = useMemo(() => [...(catalog?.free || []), ...(catalog?.premium || [])], [catalog])
   const selected = useMemo(() => allModels.find((m) => m.id === modelId) || allModels[0] || DEFAULT_MODELS.free[0], [allModels, modelId])
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -507,13 +607,18 @@ export default function App() {
   const [workspace, setWorkspace] = useState({ name: null, root: null })
   const [webDirHandle, setWebDirHandle] = useState(null)
   const [virtualFiles, setVirtualFiles] = useState(null)
-  const fileInputRef = useRef(null)
+  const folderInputRef = useRef(null)
+  const filesInputRef = useRef(null)
+  const [importNotice, setImportNotice] = useState('')
   const [folderOpen, setFolderOpen] = useState(false)
   const [browse, setBrowse] = useState(null)
   const [browseErr, setBrowseErr] = useState('')
-  const [pane, setPane] = useState('editor')
+  const [folderPath, setFolderPath] = useState('')
+  const [openingFolder, setOpeningFolder] = useState(false)
+  const browseRequest = useRef(0)
+  const [pane, setPane] = useState(new URLSearchParams(window.location.search).get('mode') === 'chat' ? 'chat' : mode === 'agent' ? 'chat' : 'editor')
   const [leftOpen, setLeftOpen] = useState(true)
-  const [rightOpen, setRightOpen] = useState(true)
+  const [rightOpen, setRightOpen] = useState(pane === 'chat')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [installPrompt, setInstallPrompt] = useState(null)
   const [installed, setInstalled] = useState(false)
@@ -600,11 +705,6 @@ export default function App() {
     return false
   })
   const [nameDraft, setNameDraft] = useState(() => localStorage.getItem(USER_KEY) || '')
-  const [centerDraft, setCenterDraft] = useState('')
-  const [capsulePickerOpen, setCapsulePickerOpen] = useState(false)
-  const [bookmarksOpen, setBookmarksOpen] = useState(false)
-  const [infoOpen, setInfoOpen] = useState(false)
-  const [plusMenuOpen, setPlusMenuOpen] = useState(false)
   const [listening, setListening] = useState(false)
   const [msgMenuIdx, setMsgMenuIdx] = useState(null)
   const [msgFeedback, setMsgFeedback] = useState({})
@@ -637,7 +737,7 @@ export default function App() {
         modelLabel: selected.label,
         updatedAt: Date.now(),
         createdAt: existingIdx >= 0 ? prev[existingIdx].createdAt : Date.now(),
-        messages
+        messages: messages.filter((message) => message.role !== 'proposal')
       }
       let next
       if (existingIdx >= 0) {
@@ -652,12 +752,12 @@ export default function App() {
   }, [messages, isTempChat, currentSessionId, mode, selected])
 
   const startNewChat = (asTemp = false) => {
+    if (requestRef.current) return
     const newId = 'sess_' + Date.now()
     setCurrentSessionId(newId)
     setIsTempChat(asTemp)
     setMessages([])
     setDraft('')
-    setCenterDraft('')
     setTimeout(() => chatInputRef.current?.focus(), 60)
   }
 
@@ -670,10 +770,11 @@ export default function App() {
   }
 
   const handleSelectSession = (session) => {
+    if (requestRef.current) return
     setCurrentSessionId(session.id)
     setIsTempChat(false)
     setMessages(session.messages || [])
-    if (session.mode) setMode(session.mode)
+    if (session.mode) switchMode(session.mode)
     if (session.modelId) pickModel(session.modelId)
     setDraft('')
   }
@@ -731,7 +832,8 @@ export default function App() {
     if (settings.theme) {
       document.documentElement.setAttribute('data-theme', settings.theme)
     }
-  }, [settings.theme])
+    document.documentElement.setAttribute('data-workbench-theme', settings.workbenchTheme || 'frenky-orange')
+  }, [settings.theme, settings.workbenchTheme])
 
   const exportErrorLog = (errorText, index, format = 'markdown') => {
     const lastUserPrompt = [...messages.slice(0, index + 1)].reverse().find((m) => m.role === 'user')?.text || ''
@@ -835,10 +937,12 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
   const createNewFile = (defaultName = 'notes.md') => {
     const existing = tabs.find((t) => t.path === defaultName)
     if (!existing) {
+      setDirty((prev) => ({ ...prev, [defaultName]: true }))
       setTabs((prev) => [...prev, { path: defaultName, content: '# Notes\n\nStart writing markdown or code here...\n' }])
     }
     setActive(defaultName)
-    setMode('editor')
+    setMdMode('edit')
+    switchMode('editor')
   }
 
   useEffect(() => {
@@ -998,11 +1102,6 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     window.addEventListener('touchend', onTouchEnd)
   }, [])
 
-  const formattedName = useMemo(() => {
-    if (!userName) return ''
-    return userName.charAt(0).toUpperCase() + userName.slice(1)
-  }, [userName])
-
   const modelShortName = useMemo(() => {
     if (!selected) return 'Spark'
     let name = selected.name || selected.label || ''
@@ -1010,7 +1109,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     return name
   }, [selected])
 
-  const toggleListening = (target = 'center') => {
+  const toggleListening = () => {
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRec) {
       alert('Speech recognition is not supported in this browser. Please type your prompt.')
@@ -1029,11 +1128,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       recognition.onresult = (e) => {
         const transcript = e.results[0]?.[0]?.transcript || ''
         if (transcript) {
-          if (target === 'draft') {
-            setDraft((prev) => (prev ? `${prev} ${transcript}` : transcript))
-          } else {
-            setCenterDraft((prev) => (prev ? `${prev} ${transcript}` : transcript))
-          }
+          setDraft((prev) => (prev ? `${prev} ${transcript}` : transcript))
         }
         setListening(false)
       }
@@ -1046,27 +1141,65 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
   }
 
   const current = tabs.find((t) => t.path === active)
+  workspaceRef.current = workspace
 
-  const loadWorkspace = useCallback(() => {
-    fetch('/api/workspace')
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.root) {
-          setWorkspace({ name: d.name || 'workspace', root: d.root })
-          fetch('/api/tree').then((r) => r.json()).then(setTree).catch(() => {})
-        } else {
-          setWorkspace({ name: null, root: null })
-          setTree(null)
+  const switchMode = (next) => {
+    setMode(next === 'agent' ? 'agent' : 'editor')
+    setPane(next === 'agent' || next === 'chat' ? 'chat' : 'editor')
+    setRightOpen(next === 'agent' || next === 'chat')
+  }
+
+  const canLeaveWorkspace = () => !requestRef.current && !savingRef.current && (
+    !tabs.some(isDirty) || window.confirm('Discard unsaved files and switch workspace?')
+  )
+
+  const loadWorkspace = useCallback(async (signal) => {
+    try {
+      const remembered = localStorage.getItem('aether.lastProject')
+      if (remembered === '') return
+      const response = await fetch('/api/workspace', { signal })
+      if (!response.ok) return
+      let project = await response.json()
+      if (remembered && remembered !== project.root) {
+        const reopened = await fetch('/api/workspace', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: remembered, includeTree: true }),
+          signal
+        })
+        if (!reopened.ok) {
+          if (!signal.aborted) setImportNotice('The last project could not be reopened. Choose a folder to continue.')
+          return
         }
-      })
-      .catch(() => {
-        setWorkspace({ name: null, root: null })
-        setTree(null)
-      })
+        project = await reopened.json()
+      }
+      if (!project.root || signal.aborted || workspaceRef.current?.root) return
+      const treeResponse = project.tree ? null : await fetch('/api/tree', { signal })
+      const restoredTree = project.tree || (treeResponse.ok ? await treeResponse.json() : null)
+      const file = await restoreLastFile(project.root, signal)
+      if (!signal.aborted && !workspaceRef.current?.root) {
+        setWorkspace({ name: project.name || 'workspace', root: project.root })
+        setTree(restoredTree)
+        if (file) {
+          setTabs([file])
+          setActive(file.path)
+          if (new URLSearchParams(window.location.search).get('mode') !== 'chat') setPane('editor')
+        }
+      }
+    } catch {
+      if (!signal.aborted && !workspaceRef.current?.root) setImportNotice('The workspace server could not be reached.')
+    }
   }, [])
 
   useEffect(() => {
-    loadWorkspace()
+    if (!workspace.root || webDirHandle || virtualFiles || !current) return
+    try { localStorage.setItem(lastFileKey(workspace.root), current.path) } catch {}
+  }, [workspace.root, webDirHandle, virtualFiles, current?.path])
+
+  useEffect(() => {
+    const restore = new AbortController()
+    workspaceRestore.current = restore
+    void loadWorkspace(restore.signal)
     fetch('/api/models').then((r) => r.json()).then((d) => {
       if (d.free && d.premium) setCatalog(d)
     }).catch(() => {})
@@ -1083,17 +1216,37 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       setInstalled(true)
     }
     return () => window.removeEventListener('beforeinstallprompt', onBeforeInstall)
+    return () => restore.abort()
   }, [loadWorkspace])
 
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (mode !== 'chat' && e.key === 'Shift' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const now = Date.now()
+        if (now - lastShift.current < 400) {
+          setSearchEverywhere(true)
+          lastShift.current = 0
+        } else {
+          lastShift.current = now
+        }
+      } else {
+        lastShift.current = 0
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault()
         setLeftOpen((v) => !v)
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'j') {
         e.preventDefault()
-        setRightOpen((v) => !v)
+        if (mode === 'chat') return
+        setPane(rightOpen ? 'editor' : 'chat')
+        setRightOpen(!rightOpen)
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o' && mode !== 'chat') {
+        e.preventDefault()
+        setLeftOpen(true)
+        if (window.innerWidth <= 860) setPane('files')
+        importFiles(filesInputRef)
       }
       if ((e.ctrlKey || e.metaKey) && e.key === ',') {
         e.preventDefault()
@@ -1102,7 +1255,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+  })
 
   const triggerInstall = async () => {
     if (!installPrompt) return
@@ -1117,7 +1270,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
 
   useEffect(() => {
     if (feedRef.current) feedRef.current.scrollTop = feedRef.current.scrollHeight
-  }, [messages])
+  }, [messages, streamText, mode])
 
   useEffect(() => {
     const q = search.trim()
@@ -1133,6 +1286,13 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         } catch {
           setHits([])
         }
+      } else if (virtualFiles) {
+        const results = []
+        for (const [path, file] of virtualFiles) {
+          if (path.toLowerCase().includes(q.toLowerCase())) results.push({ path, line: 1, preview: file.name })
+          if (results.length >= 40) break
+        }
+        setHits(results)
       } else {
         fetch(`/api/search?q=${encodeURIComponent(q)}`)
           .then((r) => r.json())
@@ -1141,9 +1301,10 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       }
     }, 220)
     return () => clearTimeout(t)
-  }, [search, webDirHandle])
+  }, [search, webDirHandle, virtualFiles])
 
   const toggleDir = useCallback((p) => {
+    expandingProject.current = null
     setOpenDirs((prev) => {
       const next = new Set(prev)
       if (next.has(p)) next.delete(p)
@@ -1152,7 +1313,50 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     })
   }, [])
 
+  const loadProjectDirectory = useCallback(async (path, signal) => {
+    const openedWorkspace = workspaceRef.current
+    let children
+    if (webDirHandle) {
+      const directory = await buildTreeFromHandle(webDirHandle, path, 0, 1)
+      children = directory.children
+    } else {
+      const response = await fetch(`/api/file?path=${encodeURIComponent(path)}`, { signal })
+      if (!response.ok) throw new Error('Could not load folder')
+      const directory = await response.json()
+      if (directory.type !== 'dir' || directory.path !== path || !Array.isArray(directory.entries)) {
+        throw new Error('Unexpected folder response')
+      }
+      children = directory.entries.sort((a, b) =>
+        a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1
+      )
+    }
+    if (signal.aborted || workspaceRef.current !== openedWorkspace) return
+
+    function updateFolder(node) {
+      if (!node || node.type !== 'dir') return node
+      if (node.path === path) {
+        return { ...node, children: node.children?.length ? node.children : children, directoryLoaded: true }
+      }
+      if (!node.path || path.startsWith(node.path + '/')) {
+        return { ...node, children: node.children?.map(updateFolder) }
+      }
+      return node
+    }
+
+    setTree(updateFolder)
+    if (expandingProject.current === openedWorkspace) {
+      setOpenDirs((previous) => new Set([...previous, ...children.filter((child) => child.type === 'dir').map((child) => child.path)]))
+    }
+  }, [webDirHandle])
+
   const openFile = useCallback(async (p) => {
+    const openedWorkspace = workspaceRef.current
+    if (tabs.some((tab) => tab.path === p)) {
+      setActive(p)
+      setEditorNotice('')
+      setPane('editor')
+      return
+    }
     try {
       let content = ''
       if (webDirHandle) {
@@ -1166,90 +1370,206 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         if (data.type !== 'file') return
         content = data.content
       }
+      if (workspaceRef.current !== openedWorkspace) return
       setTabs((prev) => {
         if (prev.some((t) => t.path === p)) return prev
         return [...prev, { path: p, content }]
       })
       setActive(p)
+      setEditorNotice('')
       setPane('editor')
     } catch (err) {
       alert('Could not open file: ' + err.message)
     }
-  }, [webDirHandle, virtualFiles])
+  }, [webDirHandle, virtualFiles, tabs])
 
   const updateContent = (value) => {
     setTabs((prev) => prev.map((t) => (t.path === active ? { ...t, content: value } : t)))
-    setDirty((d) => ({ ...d, [active]: true }))
+    setDirty((d) => ({ ...d, [active]: d[active] ?? current.content }))
+    setEditorNotice('')
   }
 
   const saveFile = async () => {
-    if (!current) return
+    if (!current || savingRef.current) return false
+    savingRef.current = true
+    const savingWorkspace = workspaceRef.current
+    setEditorNotice('Saving…')
     try {
-      if (webDirHandle) {
+      if (!workspace.root || virtualFiles) {
+        const url = URL.createObjectURL(new Blob([current.content], { type: 'text/plain' }))
+        const link = document.createElement('a')
+        link.href = url
+        link.download = current.path.split('/').pop()
+        link.click()
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+      } else if (webDirHandle) {
         await writeFileToHandle(webDirHandle, current.path, current.content)
-        setDirty((d) => ({ ...d, [current.path]: false }))
       } else {
-        await fetch('/api/file', {
+        const response = await fetch('/api/file', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ path: current.path, content: current.content })
         })
-        setDirty((d) => ({ ...d, [current.path]: false }))
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}))
+          throw new Error(data.error || `HTTP ${response.status}`)
+        }
       }
-    } catch (err) {
-      alert('Failed to save file: ' + err.message)
+      if (workspaceRef.current !== savingWorkspace) return false
+      setDirty((prev) => ({ ...prev, [current.path]: current.content }))
+      setEditorNotice(!workspace.root || virtualFiles ? 'Downloaded' : 'Saved')
+      if (webDirHandle) {
+        await buildTreeFromHandle(webDirHandle).then(setTree).catch(() => {})
+      } else if (workspace.root && !virtualFiles) {
+        await fetch('/api/tree').then((response) => response.ok ? response.json() : null)
+          .then((tree) => { if (tree) setTree(tree) }).catch(() => {})
+      }
+      return true
+    } catch (error) {
+      setEditorNotice(`Save failed · ${error.message}`)
+      return false
+    } finally {
+      savingRef.current = false
     }
   }
+
+  const isDirty = (tab) => dirty[tab.path] === true || (
+    typeof dirty[tab.path] === 'string' && dirty[tab.path] !== tab.content
+  )
+
+  useEffect(() => {
+    const handleSave = (event) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's' || mode === 'chat' || !current) return
+      event.preventDefault()
+      saveFile()
+    }
+    window.addEventListener('keydown', handleSave)
+    return () => window.removeEventListener('keydown', handleSave)
+  })
+
+  const closeEditorTabs = (path, closeOthers = false, scope = 'single') => {
+    const index = tabs.findIndex((tab) => tab.path === path)
+    if (savingRef.current || index < 0) return
+    const closing = tabs.filter((tab, position) => {
+      if (scope === 'all') return true
+      if (scope === 'right') return position > index
+      return closeOthers ? tab.path !== path : tab.path === path
+    })
+    if (!closing.length) return
+
+    const unsaved = closing.filter(isDirty)
+    if (unsaved.length && !window.confirm(
+      `Discard unsaved changes to the following files?\n\n${unsaved.map((tab) => tab.path).join('\n')}`
+    )) return
+
+    const closedPaths = new Set(closing.map((tab) => tab.path))
+    const remaining = tabs.filter((tab) => !closedPaths.has(tab.path))
+    if (!webDirHandle && !virtualFiles && workspace.root) {
+      setClosedEditorFiles((previous) => [
+        ...closing.map((tab) => ({ root: workspace.root, path: tab.path })),
+        ...previous.filter((item) => item.root !== workspace.root || !closedPaths.has(item.path))
+      ].slice(0, 30))
+    }
+    setTabs(remaining)
+    if (closeOthers || closedPaths.has(active)) {
+      setActive(closeOthers ? path : remaining[Math.min(index, remaining.length - 1)]?.path || '')
+      setEditorNotice('')
+    }
+    setDirty((previous) => Object.fromEntries(Object.entries(previous).filter(([file]) => !closedPaths.has(file))))
+  }
+
+  useEffect(() => {
+    const handleClose = (event) => {
+      if (!event.ctrlKey || event.altKey || event.shiftKey || event.key !== 'F4' || mode === 'chat' || !current) return
+      event.preventDefault()
+      closeEditorTabs(current.path)
+    }
+    window.addEventListener('keydown', handleClose)
+    return () => window.removeEventListener('keydown', handleClose)
+  })
 
   const persistVault = (next) => {
     setVault(next)
     saveVault(next)
   }
 
+  const openProject = ({ project, tree, handle = null, files = null, restoredFile = null }) => {
+    workspaceRestore.current?.abort()
+    try { localStorage.setItem('aether.lastProject', handle || files ? '' : project.root) } catch {}
+    setMessages((prev) => prev.filter((message) => message.role !== 'proposal'))
+    setWebDirHandle(handle)
+    setVirtualFiles(files)
+    setWorkspace(project)
+    setTree(tree)
+    setTabs(restoredFile ? [restoredFile] : [])
+    setActive(restoredFile?.path || '')
+    setDirty({})
+    setHits([])
+    setSearch('')
+    setOpenDirs(new Set(['']))
+    setLeftOpen(true)
+    setEditorNotice('')
+    setImportNotice('')
+    setPane(!restoredFile && window.innerWidth <= 860 ? 'files' : 'editor')
+  }
+
+  const importFiles = (input) => {
+    if (!canLeaveWorkspace()) return
+    setImportNotice('')
+    input.current?.click()
+  }
+
   const openLocalFolder = async () => {
-    if (isNativeFSSupported()) {
-      try {
-        const handle = await pickNativeDirectory()
-        setWebDirHandle(handle)
-        setVirtualFiles(null)
-        setWorkspace({ name: handle.name, root: 'local:' + handle.name })
-        const treeData = await buildTreeFromHandle(handle)
-        setTree(treeData)
-        setTabs([])
-        setActive('')
-        setDirty({})
-        setHits([])
-        setSearch('')
-      } catch (err) {
-        if (err.name !== 'AbortError') {
-          openFolderPicker()
-        }
-      }
-    } else {
-      if (fileInputRef.current) {
-        fileInputRef.current.click()
-      } else {
-        openFolderPicker()
+    if (!isNativeFSSupported()) {
+      importFiles(folderInputRef)
+      return
+    }
+    if (!canLeaveWorkspace()) return
+    setImportNotice('')
+    try {
+      const handle = await pickNativeDirectory()
+      const tree = await buildTreeFromHandle(handle)
+      openProject({ project: { name: handle.name, root: 'local:' + handle.name }, tree, handle })
+      setFolderOpen(false)
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        setBrowseErr('The browser could not access that folder. Enter its path or import a copy.')
+        setLeftOpen(true)
+        if (window.innerWidth <= 860) setPane('files')
       }
     }
   }
 
-  const handleVirtualInput = (e) => {
-    const files = e.target.files
-    if (!files || !files.length) return
-    const { root: treeData, fileMap } = buildVirtualTreeFromFiles(files)
-    setVirtualFiles(fileMap)
-    setWebDirHandle(null)
-    setWorkspace({ name: treeData.name, root: 'virtual:' + treeData.name })
-    setTree(treeData)
-    setTabs([])
-    setActive('')
-    setDirty({})
-    setHits([])
-    setSearch('')
+  const handleVirtualInput = (event) => {
+    const files = Array.from(event.target.files || [])
+    event.target.value = ''
+    if (!files.length) return
+    const { root: tree, fileMap } = buildVirtualTreeFromFiles(files)
+    if (!fileMap.size) {
+      setImportNotice('No project files were found in that selection.')
+      return
+    }
+    openProject({ project: { name: tree.name, root: 'virtual:' + tree.name }, tree, files: fileMap })
+    setFolderOpen(false)
   }
 
-  const closeProject = async () => {
+  const forgetRecentProject = (root) => {
+    const next = recentProjects.filter((item) => item.root !== root)
+    setRecentProjects(next)
+    try {
+      localStorage.setItem('aether.recentProjects', JSON.stringify(next))
+      if (localStorage.getItem('aether.lastProject') === root) localStorage.setItem('aether.lastProject', '')
+      localStorage.removeItem('aether.lastFile:' + root)
+      localStorage.removeItem(lastFileKey(root))
+    } catch {}
+  }
+
+  const closeProject = async (forget = false) => {
+    if (!canLeaveWorkspace()) return
+    workspaceRestore.current?.abort()
+    if (forget) forgetRecentProject(workspace.root)
+    try { localStorage.setItem('aether.lastProject', '') } catch {}
+    setMessages((prev) => prev.filter((message) => message.role !== 'proposal'))
     setWebDirHandle(null)
     setVirtualFiles(null)
     setWorkspace({ name: null, root: null })
@@ -1263,44 +1583,69 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
   }
 
   const loadBrowse = async (dir) => {
+    const request = ++browseRequest.current
     setBrowseErr('')
-    const url = dir ? `/api/browse?path=${encodeURIComponent(dir)}` : '/api/browse'
-    const res = await fetch(url)
-    const data = await res.json()
-    if (!res.ok) {
-      setBrowseErr(data.error || 'Cannot open folder')
-      return
+    try {
+      const url = dir ? `/api/browse?path=${encodeURIComponent(dir)}` : '/api/browse'
+      const res = await fetch(url, { signal: AbortSignal.timeout(10000) })
+      const data = await res.json()
+      if (request !== browseRequest.current) return
+      if (!res.ok) {
+        setBrowseErr(data.error || 'Could not browse that folder.')
+        return
+      }
+      setBrowse(data)
+      setFolderPath(data.path)
+    } catch {
+      if (request === browseRequest.current) {
+        setBrowseErr('The workspace server could not be reached. You can still choose or import a folder.')
+      }
     }
-    setBrowse(data)
   }
 
-  const openFolderPicker = async () => {
+  const openFolderPicker = () => {
+    const root = workspace.root && !webDirHandle && !virtualFiles ? workspace.root : ''
+    setBrowse(null)
+    setFolderPath(root)
     setFolderOpen(true)
-    await loadBrowse(workspace.root || undefined)
+    void loadBrowse(root)
   }
 
-  const selectFolder = async () => {
-    if (!browse?.path) return
-    const res = await fetch('/api/workspace', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: browse.path })
-    })
-    const data = await res.json()
-    if (!res.ok) {
-      setBrowseErr(data.error || 'Could not open folder')
-      return
+  const selectFolder = async (requested = folderPath) => {
+    const path = requested.trim()
+    if (!path || openingFolder || !canLeaveWorkspace()) return
+    workspaceRestore.current?.abort()
+    browseRequest.current++
+    setOpeningFolder(true)
+    setBrowseErr('')
+    try {
+      const res = await fetch('/api/workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, includeTree: true }),
+        signal: AbortSignal.timeout(10000)
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        const message = data.error || 'Could not open that folder.'
+        setBrowseErr(message)
+        setImportNotice(message)
+        return
+      }
+      const restoredFile = await restoreLastFile(data.root, AbortSignal.timeout(5000))
+      openProject({ project: { name: data.name, root: data.root }, tree: data.tree, restoredFile })
+      const next = [{ name: data.name, root: data.root }, ...recentProjects.filter((item) => item.root !== data.root)].slice(0, 8)
+      setRecentProjects(next)
+      try {
+        localStorage.setItem('aether.recentProjects', JSON.stringify(next))
+      } catch {}
+      setFolderOpen(false)
+    } catch {
+      setBrowseErr('The workspace server could not open this folder. Try Choose Folder or Import Folder.')
+      setImportNotice('The workspace server could not open this folder.')
+    } finally {
+      setOpeningFolder(false)
     }
-    setWebDirHandle(null)
-    setVirtualFiles(null)
-    setTabs([])
-    setActive('')
-    setDirty({})
-    setSearch('')
-    setHits([])
-    setOpenDirs(new Set(['']))
-    setFolderOpen(false)
-    loadWorkspace()
   }
 
   const premiumToken = (model) => {
@@ -1338,68 +1683,503 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
 
   const send = async (explicitText) => {
     const text = (typeof explicitText === 'string' ? explicitText : draft).trim()
-    if (!text || busy) return
+    if (!text || requestRef.current) return
     const token = premiumToken(selected)
     if (selected.tier === 'premium' && !token) {
       setVaultTab(selected.provider === 'gemini' ? 'gemini' : 'openai')
       setVaultOpen(true)
       return
     }
+    const controller = new AbortController()
+    requestRef.current = controller
+    const timeout = setTimeout(() => controller.abort('timeout'), 120000)
+    const serverWorkspace = Boolean(workspace.root && !webDirHandle && !virtualFiles)
+    const history = messages
+      .filter((m) => m.role === 'user' || m.role === 'ai')
+      .slice(-20)
+      .map((m) => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.text.slice(0, 8000) }))
+    const context = [
+      settings.customInstructions,
+      mode !== 'chat' && current ? `Active file: ${current.path}\n\n${current.content.slice(0, 8000)}` : ''
+    ].filter(Boolean).join('\n\n')
     setDraft('')
-    setCenterDraft('')
     if (mode !== 'chat') {
       setRightOpen(true)
       setPane('chat')
     }
-    const context = [
-      settings.customInstructions ? `User Custom Instructions: ${settings.customInstructions}` : '',
-      current ? `Active File: ${current.path}\n\n${current.content.slice(0, 8000)}` : ''
-    ].filter(Boolean).join('\n\n')
-    setMessages((m) => [...m, { role: 'user', text }])
+    setMessages((prev) => [...prev, { role: 'user', text }])
     setBusy(true)
     try {
       await executeChat({
-        message: text,
-        mode,
-        context,
-        model: selected,
-        token,
-        dirHandle: webDirHandle,
-        proxyUrl: vault.proxyUrl,
+        message: text, history, mode, context, model: selected, token,
+        dirHandle: webDirHandle, serverWorkspace, proxyUrl: vault.proxyUrl,
+        signal: controller.signal,
         onEvent: (event, data) => {
-          if (event === 'tool') {
-            setMessages((m) => [...m, {
-              role: 'tool',
-              name: data.name,
-              status: data.status,
-              args: data.args,
-              output: data.output
-            }])
-          } else if (event === 'message') {
-            setMessages((m) => [...m, { role: 'ai', text: data.text || '' }])
-          } else if (event === 'error') {
-            setMessages((m) => [...m, { role: 'error', text: data.error || 'Request failed' }])
+          if (controller.signal.aborted) return
+          if (event === 'message.delta') {
+            setStreamText(data.fullText)
+          } else if (event === 'proposal') {
+            setMessages((prev) => [...prev, { role: 'proposal', path: data.path, text: data.content, workspaceRoot: workspace.root }])
+          } else if (event === 'tool' && data.status === 'done') {
+            setStreamText('')
+            setMessages((prev) => [...prev, { role: 'tool', name: data.name, status: data.status, output: data.output }])
+          } else if (event === 'message' || event === 'error') {
+            setStreamText('')
+            setMessages((prev) => [...prev, { role: event === 'message' ? 'ai' : 'error', text: data.text || data.error }])
           }
         }
       })
-      if (webDirHandle) {
-        const treeData = await buildTreeFromHandle(webDirHandle)
-        setTree(treeData)
-      } else {
-        loadWorkspace()
-      }
-      if (current) openFile(current.path)
-    } catch (err) {
-      setMessages((m) => [...m, { role: 'error', text: err.message }])
+    } catch (error) {
+      const text = controller.signal.reason === 'timeout' ? 'The request timed out.'
+        : controller.signal.aborted ? 'Request stopped.' : error.message
+      setMessages((prev) => [...prev, { role: 'error', text }])
     } finally {
+      clearTimeout(timeout)
+      requestRef.current = null
+      setStreamText('')
       setBusy(false)
     }
   }
 
-  const linked = selected.tier === 'free' || Boolean(premiumToken(selected))
+  const reviewProposal = (proposal) => {
+    if (!workspace.root || virtualFiles || proposal.workspaceRoot !== workspace.root) return
+    const existing = tabs.find((tab) => tab.path === proposal.path)
+    if (existing && isDirty(existing) && !window.confirm(`Replace your unsaved draft for ${proposal.path}?`)) return
+    const draftTab = { path: proposal.path, content: proposal.text }
+    setTabs((prev) => existing ? prev.map((tab) => tab.path === proposal.path ? draftTab : tab) : [...prev, draftTab])
+    setDirty((prev) => ({ ...prev, [proposal.path]: true }))
+    setActive(proposal.path)
+    setPane('editor')
+    if (mode === 'chat') switchMode('agent')
+    setMdMode('edit')
+    setEditorNotice('Agent proposal · Review and save')
+  }
+
+  useEffect(() => {
+    setLaunchTarget('')
+    setLaunchRequest(null)
+    setLaunchCatalog({ applications: [], jdks: [] })
+  }, [workspace.root])
+
+  useEffect(() => {
+    if (!workspace.root || webDirHandle || virtualFiles || !tree) return
+    const controller = new AbortController()
+    fetch('/api/maven/applications', { signal: controller.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => { if (data && !controller.signal.aborted) setLaunchCatalog(data) })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [workspace.root, webDirHandle, virtualFiles, tree])
+
+  const selectedLaunch = launchCatalog.applications.find(({ path }) => path === launchTarget)
+    || launchCatalog.applications.find(({ path }) => path === active)
+    || launchCatalog.applications[0]
+
+  const showRun = () => {
+    setRunLaunch((previous) => previous + 1)
+  }
+
+  const linked = Boolean(premiumToken(selected))
+  const keyStatus = linked ? 'API key ready' : selected.provider === 'pollinations' ? 'Server key' : 'Needs API key'
+  const stopRequest = () => requestRef.current?.abort()
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const close = (event) => {
+      if (event.type === 'keydown' && event.key !== 'Escape') return
+      if (event.type === 'pointerdown' && event.target.closest('.workbench-menu')) return
+      setActiveMenu(null)
+      setMenuOpen(false)
+    }
+    window.addEventListener('keydown', close)
+    window.addEventListener('pointerdown', close)
+    return () => {
+      window.removeEventListener('keydown', close)
+      window.removeEventListener('pointerdown', close)
+    }
+  }, [menuOpen])
+
+  const toggleProject = () => {
+    if (!leftOpen) setPane('editor')
+    setLeftOpen(!leftOpen)
+  }
+  const toggleAssistant = () => {
+    setMavenSideOpen(false)
+    switchMode(rightOpen && mode === 'editor' ? 'editor' : 'chat')
+  }
+  const toggleMaven = () => {
+    setMavenSideOpen(!mavenSideOpen)
+    if (!mavenSideOpen) {
+      setRightOpen(false)
+      setPane('editor')
+    }
+  }
+  const executeApplication = async (debug, target = selectedLaunch) => {
+    if (!target) {
+      showRun()
+      return
+    }
+    if (current?.path === target.path && isDirty(current) && !(await saveFile())) return
+    setTerminalOpen(false)
+    setMavenOpen(true)
+    setLaunchTarget(target.path)
+    setLaunchRequest({ goal: 'application', debug, application: target.path })
+  }
+  const toggleTerminal = () => {
+    const next = !mavenOpen || !terminalOpen
+    setMavenOpen(next)
+    setTerminalOpen(next)
+  }
+  const outline = useMemo(() => javaOutline(current?.path, current?.content), [current])
+  const activeMain = launchCatalog.applications.find((item) => item.path === active)
+  const breakpointWorkspace = workspace.root || workspace.name || ''
+  const projectBreakpoints = javaBreakpoints[breakpointWorkspace] || {}
+  const toggleBreakpoint = (line) => {
+    setJavaBreakpoints((previous) => {
+      const files = previous[breakpointWorkspace] || {}
+      const lines = files[active] || []
+      const next = lines.includes(line) ? lines.filter((item) => item !== line) : [...lines, line].sort((a, b) => a - b)
+      return { ...previous, [breakpointWorkspace]: { ...files, [active]: next } }
+    })
+  }
+  const toggleStructure = () => {
+    setStructureOpen((previous) => !previous)
+    setLeftOpen(true)
+    if (window.innerWidth <= 860) setPane('files')
+  }
+
+  const reloadMavenTree = async () => {
+    if (!workspace.root || webDirHandle || virtualFiles) throw new Error('Use a server workspace')
+    const openedWorkspace = workspaceRef.current
+    const response = await fetch('/api/tree')
+    if (!response.ok) throw new Error('Workspace unavailable')
+    const next = await response.json()
+    if (workspaceRef.current === openedWorkspace) setTree(next)
+  }
+
+  const revealCurrentFile = () => revealFile(active)
+  const revealFile = (path) => {
+    if (!path) return
+    setSearch('')
+    setLeftOpen(true)
+    if (window.innerWidth <= 860) setPane('files')
+    const parts = path.split('/')
+    setOpenDirs((previous) => new Set([...previous, '', ...parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join('/'))]))
+    setRevealPath({ path })
+  }
+
+  useEffect(() => {
+    if (!revealPath) return
+    document.querySelector(`[data-project-path="${CSS.escape(revealPath.path)}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [revealPath, tree])
+
+  const expandProject = () => {
+    expandingProject.current = workspaceRef.current
+    const paths = new Set()
+    const visit = (node) => {
+      if (node?.type !== 'dir') return
+      paths.add(node.path)
+      node.children?.forEach(visit)
+    }
+    visit(tree)
+    setSearch('')
+    setOpenDirs(paths)
+  }
+  const collapseProject = () => {
+    expandingProject.current = null
+    setSearch('')
+    setOpenDirs(new Set())
+  }
+
+  const canCreateInProject = Boolean(workspace.root && !webDirHandle && !virtualFiles)
+  const parentFolder = (file = '') => file.split('/').slice(0, -1).join('/')
+  const createProjectItem = async (kind, directory, extension = '', template = () => '') => {
+    const input = window.prompt(`New ${kind} name`)
+    if (input === null) return
+    let name = input.trim()
+    if (!name || /[<>:"/\\|?*]/.test(name) || /[. ]$/.test(name) ||
+      (kind === 'Java Class' && !/^[A-Za-z_$][\w$]*(?:\.java)?$/.test(name))) {
+      setImportNotice('Enter a valid name without path separators.')
+      return
+    }
+    if (extension && !name.toLowerCase().endsWith(extension)) name += extension
+    const path = [directory, name].filter(Boolean).join('/')
+    const folder = kind === 'Directory'
+    const openedWorkspace = workspaceRef.current
+    try {
+      const response = await fetch(folder ? '/api/mkdir' : '/api/file', {
+        method: folder ? 'POST' : 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, createOnly: true, content: template(name, directory) })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(response.status === 409 ? 'That name already exists.' : data.error)
+      if (workspaceRef.current !== openedWorkspace) return
+      await reloadMavenTree()
+      if (workspaceRef.current !== openedWorkspace) return
+      const parts = directory ? directory.split('/') : []
+      setOpenDirs((previous) => new Set([...previous, '', ...parts.map((_, index) => parts.slice(0, index + 1).join('/'))]))
+      setImportNotice('')
+      if (!folder) await openFile(data.path)
+    } catch (error) {
+      if (workspaceRef.current === openedWorkspace) setImportNotice(error.message || 'Could not create the item.')
+    }
+  }
+  const newItems = (directory, fromFileMenu = false) => [
+    ...(fromFileMenu ? [['Project from Existing Sources…', openFolderPicker]] : []),
+    ['File…', canCreateInProject ? () => createProjectItem('File', directory) : null],
+    ['Directory…', canCreateInProject ? () => createProjectItem('Directory', directory) : null],
+    ['Java Class…', canCreateInProject ? () => createProjectItem('Java Class', directory, '.java', (name, folder) => {
+      const pkg = /(?:^|\/)src\/(?:main|test)\/java\/(.+)$/.exec(folder)?.[1]?.replaceAll('/', '.')
+      return (pkg ? `package ${pkg};\n\n` : '') + `public class ${name.slice(0, -5)} {\n}\n`
+    }) : null],
+    ['HTML File…', canCreateInProject ? () => createProjectItem('HTML File', directory, '.html', () => '<!doctype html>\n<html lang="en">\n<head><title>New page</title></head>\n<body></body>\n</html>\n') : null],
+    ['Kotlin Class/File…', canCreateInProject ? () => createProjectItem('Kotlin File', directory, '.kt') : null],
+    ['HTTP Request…', canCreateInProject ? () => createProjectItem('HTTP Request', directory, '.http') : null],
+    ['Resource Bundle…', canCreateInProject ? () => createProjectItem('Resource Bundle', directory, '.properties') : null],
+    ['Markdown Scratch File', () => createNewFile()]
+  ]
+  const openProjectMenu = (event, node) => {
+    event.preventDefault()
+    setMenuOpen(false)
+    setActiveMenu(null)
+    setNewMenuOpen(false)
+    const width = node.type === 'file' ? 322 : 230
+    const height = node.type === 'file' ? 370 : 220
+    setProjectMenu({ node, x: Math.max(4, Math.min(event.clientX, window.innerWidth - width)),
+      y: Math.max(4, Math.min(event.clientY, window.innerHeight - height)) })
+  }
+  useEffect(() => {
+    if (!projectMenu) return
+    const dismiss = (event) => {
+      if (event.type === 'keydown' ? event.key === 'Escape' : !event.target.closest('.project-context-menu')) setProjectMenu(null)
+    }
+    document.addEventListener('pointerdown', dismiss)
+    document.addEventListener('keydown', dismiss)
+    return () => {
+      document.removeEventListener('pointerdown', dismiss)
+      document.removeEventListener('keydown', dismiss)
+    }
+  }, [projectMenu])
+  const renderNewMenu = (directory, context = false) => <div className="ide-new-menu">
+    <button type="button" aria-expanded={newMenuOpen} onClick={() => setNewMenuOpen(!newMenuOpen)}>New <span aria-hidden="true">›</span></button>
+    {newMenuOpen && <div className="ide-new-items">
+      {newItems(directory, !context).map(([label, action]) => <button type="button" key={label} disabled={!action} onClick={() => {
+        setProjectMenu(null)
+        setMenuOpen(false)
+        setActiveMenu(null)
+        setNewMenuOpen(false)
+        action()
+      }}>{label}</button>)}
+    </div>}
+  </div>
+  const contextNode = projectMenu?.node
+  const tabContext = projectMenu?.tab === true
+  const reopenCandidate = closedEditorFiles.find((item) => item.root === workspace.root && !tabs.some((tab) => tab.path === item.path))
+  const tabsOverflow = tabs.length * 154 - 4 > tabStripWidth
+  const visibleTabCount = tabsOverflow ? Math.max(1, Math.floor((tabStripWidth - 58) / 154)) : tabs.length
+  const visibleTabs = tabs.slice(0, visibleTabCount)
+  if (current && !visibleTabs.includes(current)) visibleTabs[visibleTabs.length - 1] = current
+  const hiddenTabs = tabs.filter((tab) => !visibleTabs.includes(tab))
+  const openTabPopup = (event, kind) => {
+    const anchor = event.currentTarget.getBoundingClientRect()
+    tabPopupTrigger.current = event.currentTarget
+    setTabPopup(tabPopup?.kind === kind ? null : {
+      kind,
+      left: Math.max(4, Math.min(anchor.right - 244, window.innerWidth - 248)),
+      top: anchor.bottom + 4,
+      maxHeight: Math.max(48, window.innerHeight - anchor.bottom - 8)
+    })
+  }
+  const selectPopupFile = (path) => {
+    setTabPopup(null)
+    void openFile(path)
+  }
+  useEffect(() => {
+    if (!projectViewPosition) return
+    const dismiss = (event) => {
+      if (event.type === 'pointerdown' && (projectViewButton.current?.contains(event.target) || event.target.closest('.project-view-popup'))) return
+      if (event.type === 'keydown' && event.key !== 'Escape') return
+      setProjectViewPosition(null)
+      if (event.type === 'keydown') projectViewButton.current?.focus()
+    }
+    document.addEventListener('pointerdown', dismiss)
+    document.addEventListener('keydown', dismiss)
+    window.addEventListener('resize', dismiss)
+    return () => {
+      document.removeEventListener('pointerdown', dismiss)
+      document.removeEventListener('keydown', dismiss)
+      window.removeEventListener('resize', dismiss)
+    }
+  }, [projectViewPosition])
+  const confirmProjectFileDelete = (path) => {
+    const tab = tabs.find((item) => item.path === path)
+    setPendingDelete({ path, workspace: workspaceRef.current, unsaved: Boolean(tab && isDirty(tab)) })
+  }
+  useEffect(() => {
+    if (pendingDelete && !deleteDialog.current?.open) deleteDialog.current?.showModal()
+  }, [pendingDelete])
+  const deleteProjectFile = async ({ path, workspace: openedWorkspace }) => {
+    setPendingDelete(null)
+    if (workspaceRef.current !== openedWorkspace) return
+    try {
+      const response = await fetch('/api/file', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, project: openedWorkspace.root })
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok || data?.ok !== true) {
+        throw new Error(data?.error || (response.status === 404 ? 'Delete is unavailable. Restart the Aether backend.' : 'Could not delete the file.'))
+      }
+      if (workspaceRef.current !== openedWorkspace) return
+      const removeFile = (node) => {
+        if (!node?.children || (node.path && !path.startsWith(node.path + '/'))) return node
+        return { ...node, children: node.children.filter((child) => child.path !== path).map(removeFile) }
+      }
+      setTree(removeFile)
+      setTabs((previous) => previous.filter((item) => item.path !== path))
+      setActive((previous) => previous === path ? '' : previous)
+      setDirty((previous) => {
+        const next = { ...previous }
+        delete next[path]
+        return next
+      })
+      setHits((previous) => previous.filter((item) => item.path !== path))
+      try {
+        for (const key of [lastFileKey(openedWorkspace.root), 'aether.lastFile:' + openedWorkspace.root]) {
+          if (localStorage.getItem(key) === path) localStorage.removeItem(key)
+        }
+      } catch {}
+      setImportNotice('')
+    } catch (error) {
+      if (workspaceRef.current === openedWorkspace) setImportNotice(error.message)
+    }
+  }
+  const reloadProjectFile = async (path) => {
+    const tab = tabs.find((item) => item.path === path)
+    if (tab && isDirty(tab) && !window.confirm('Discard unsaved edits and reload this file from disk?')) return
+    const openedWorkspace = workspaceRef.current
+    try {
+      const response = await fetch('/api/file?path=' + encodeURIComponent(path), { cache: 'no-store' })
+      const data = await response.json()
+      if (!response.ok || data.type !== 'file') throw new Error(data.error || 'Could not reload the file.')
+      if (workspaceRef.current !== openedWorkspace) return
+      setTabs((previous) => previous.some((item) => item.path === path)
+        ? previous.map((item) => item.path === path ? { ...item, content: data.content } : item)
+        : [...previous, { path, content: data.content }])
+      setDirty((previous) => ({ ...previous, [path]: data.content }))
+      setActive(path)
+      setEditorNotice('')
+      setPane('editor')
+    } catch (error) {
+      if (workspaceRef.current === openedWorkspace) setImportNotice(error.message)
+    }
+  }
+  const contextMain = launchCatalog.applications.find((item) => item.path === contextNode?.path)
+  const tabActionGroups = tabContext ? [
+    [
+      ['Close', () => closeEditorTabs(contextNode.path)],
+      ['Close Other Tabs', tabs.length > 1 ? () => closeEditorTabs(contextNode.path, true) : null],
+      ['Close All Tabs', () => closeEditorTabs(contextNode.path, false, 'all')],
+      ['Close Tabs to the Right', tabs.at(-1)?.path !== contextNode.path ? () => closeEditorTabs(contextNode.path, false, 'right') : null]
+    ],
+    [
+      ['Copy Path/Reference…', () => navigator.clipboard.writeText(contextNode.path).catch(() => setEditorNotice('Could not copy the path.')), 'file'],
+      ['Reveal in Project', workspace.root ? () => { setActive(contextNode.path); revealFile(contextNode.path) } : null, 'folder'],
+      ['Reopen Closed Tab', reopenCandidate ? () => openFile(reopenCandidate.path) : null, 'reload']
+    ],
+    ...(contextMain ? [[
+      [`Run '${contextMain.className.split('.').at(-1)}.main()'`, () => executeApplication(false, contextMain), 'play'],
+      [`Debug '${contextMain.className.split('.').at(-1)}.main()'`, () => executeApplication(true, contextMain), 'debug'],
+      ['Edit Run/Debug Configuration…', () => { setLaunchTarget(contextMain.path); showRun() }, 'execute']
+    ]] : [])
+  ] : []
+  const fileContext = contextNode?.type === 'file'
+  const fileActionGroups = fileContext ? [
+    [
+      ['Open File', () => openFile(contextNode.path), 'file'],
+      ['Copy Path/Reference…', () => navigator.clipboard.writeText(contextNode.path).catch(() => setImportNotice('Could not copy the path.')), 'file']
+    ],
+    [['Delete…', canCreateInProject ? () => confirmProjectFileDelete(contextNode.path) : null, 'trash']],
+    ...(contextMain ? [[
+      [`Run '${contextMain.className.split('.').at(-1)}.main()'`, () => executeApplication(false, contextMain), 'play'],
+      [`Debug '${contextMain.className.split('.').at(-1)}.main()'`, () => executeApplication(true, contextMain), 'debug'],
+      ['Edit Run/Debug Configuration…', () => { setLaunchTarget(contextMain.path); showRun() }, 'execute']
+    ]] : []),
+    [['Reload from Disk', canCreateInProject ? () => reloadProjectFile(contextNode.path) : null, 'reload']]
+  ] : []
+  const contextActions = contextNode ? [
+    [contextNode.type === 'dir' ? 'Find in Files…' : 'Open File', contextNode.type === 'dir' ? () => setSearchEverywhere(true) : () => openFile(contextNode.path)],
+    ['Copy Path', () => navigator.clipboard.writeText(contextNode.path || workspace.root).catch(() => setImportNotice('Could not copy the path.'))],
+    ['Reload from Disk', canCreateInProject ? () => reloadMavenTree().catch(() => setImportNotice('Could not reload the project.')) : null],
+    ...(contextNode.path ? [] : [['Maven', canCreateInProject ? toggleMaven : null], ['Close Project', () => closeProject()]])
+  ] : []
+
+  const menus = {
+    File: [
+      ['Open Project…', openFolderPicker],
+      ['Browse Server Workspace…', openFolderPicker],
+      ['Save', current ? saveFile : null],
+      ['Close Project', workspace.root ? () => closeProject() : null],
+      ['Settings…', () => setSettingsOpen(true)]
+    ],
+    Edit: [['Edit Markdown', current?.path.match(/\.m(?:d|arkdown)$/i) ? () => setMdMode('edit') : null]],
+    View: [['Project', toggleProject], ['Structure', toggleStructure], ['AI Chat', toggleAssistant], ['Maven Console', toggleMaven]],
+    Navigate: [['Search Everywhere', () => setSearchEverywhere(true)]],
+    Code: [['Reformat Code', null]],
+    Refactor: [['Rename Symbol', null]],
+    Build: [['Maven Lifecycle', toggleMaven]],
+    Run: [['Run Application…', () => executeApplication(false)], ['Run / Debug Configurations…', showRun]],
+    Tools: [['Maven Terminal', toggleTerminal], ['Agent', () => switchMode('agent')], ['Provider Keys…', () => setVaultOpen(true)]],
+    VCS: [['Commit', null]],
+    Window: [['Toggle Project', toggleProject], ['Toggle Assistant', toggleAssistant]],
+    Help: [['Install Aether…', () => setAppModalOpen(true)]]
+  }
 
   return (
-    <div className={`app mode-${mode}`}>
+    <div className={`app intellij-workbench mode-${mode} ${mavenOpen && mode !== 'chat' ? 'has-maven-panel' : ''}`}>
+      {pendingDelete && createPortal(
+        <dialog ref={deleteDialog} className="java-config-dialog delete-file-dialog" aria-labelledby="delete-file-title" aria-describedby="delete-file-description"
+          onCancel={(event) => { event.preventDefault(); setPendingDelete(null) }}>
+          <header>
+            <span className="delete-file-emblem" aria-hidden="true">
+              <span className="delete-art-sheet"><TreeIcon name="file" /></span>
+              <span className="delete-art-bin"><TreeIcon name="trash" /></span>
+            </span>
+            <div>
+              <strong id="delete-file-title">Delete file?</strong>
+              <p id="delete-file-description">This will permanently remove the file from disk.</p>
+            </div>
+            <details className="delete-file-help">
+              <summary aria-label="About permanent deletion" title="About permanent deletion">?</summary>
+              <div>Deleting here skips the Recycle Bin. Choose Cancel to keep the file.</div>
+            </details>
+          </header>
+          <div className="delete-file-message">
+            <div className="delete-file-preview">
+              <TreeIcon name="file" />
+              <div>
+                <strong>{pendingDelete.path.split('/').at(-1)}</strong>
+                {pendingDelete.path.includes('/') && <small>{pendingDelete.path.split('/').slice(0, -1).join('/')}</small>}
+              </div>
+            </div>
+            {pendingDelete.unsaved && <p className="delete-file-warning">Unsaved changes to this file will be lost.</p>}
+          </div>
+          <footer>
+            <button type="button" autoFocus title="Cancel" aria-label="Cancel" onClick={() => setPendingDelete(null)}><span aria-hidden="true">×</span></button>
+            <button type="button" className="delete-file-confirm" title="Delete file" aria-label="Delete file" onClick={() => void deleteProjectFile(pendingDelete)}><TreeIcon name="trash" /></button>
+          </footer>
+        </dialog>, document.body
+      )}
+      {contextNode && <div className={`project-context-menu ${fileContext ? 'file-context-menu' : ''}`} style={{ left: projectMenu.x, top: projectMenu.y }} aria-label={tabContext ? 'Editor tab actions' : fileContext ? 'File actions' : 'Project actions'}>
+        {!tabContext && renderNewMenu(contextNode.type === 'dir' ? contextNode.path : parentFolder(contextNode.path), true)}
+        {(tabContext ? tabActionGroups : fileContext ? fileActionGroups : [contextActions]).map((group, index) => <div className="context-action-group" key={index}>
+          {group.map(([label, action, icon]) => <button type="button" key={label} disabled={!action} onClick={() => { setProjectMenu(null); action() }}>
+            {icon && <TreeIcon name={icon} />}{label}
+          </button>)}
+        </div>)}
+      </div>}
       <header className="topbar">
         <div className="mark">
           <div className="mark-orb" />
@@ -1408,23 +2188,72 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             <span>AI Studio</span>
           </div>
         </div>
+        <nav className="workbench-menu" aria-label="IDE menu">
+        <button type="button" className="workbench-menu-toggle" aria-label="Menu" aria-expanded={menuOpen} onClick={() => { setMenuOpen(!menuOpen); setActiveMenu(null); setNewMenuOpen(false) }}>☰</button>
+          {menuOpen && <div className="workbench-menu-bar">{Object.entries(menus).map(([name, items]) => (
+            <div className="workbench-menu-group" key={name}>
+              <button type="button" aria-expanded={activeMenu === name} onClick={() => { setNewMenuOpen(false); setActiveMenu(activeMenu === name ? null : name) }}>{name}</button>
+              {activeMenu === name && (
+                <div className="workbench-menu-items">
+                  {name === 'File' && renderNewMenu(parentFolder(active))}
+                  {items.map(([label, action]) => (
+                    <button type="button" key={label} disabled={!action} onClick={() => { setActiveMenu(null); setMenuOpen(false); action?.() }}>{label}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}</div>}
+        </nav>
+        <details className="toolbar-popover project-switcher">
+          <summary title={workspace.root || 'Switch project'}><span>{workspace.name || 'Open Project'}</span><span className="project-switcher-chevron" aria-hidden="true" /></summary>
+          <div>
+            <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; openFolderPicker() }}>Open Project…</button>
+            {recentProjects.length > 0 && <strong>Recent Projects</strong>}
+            {recentProjects.map((item) => (
+              <button type="button" key={item.root} onClick={(event) => {
+                event.currentTarget.closest('details').open = false
+                setFolderPath(item.root)
+                setBrowse(null)
+                setFolderOpen(true)
+                void selectFolder(item.root)
+              }}><span>{item.name}</span><small>{item.root}</small></button>
+            ))}
+          </div>
+        </details>
         <div className="modes">
-          <button className={mode === 'agent' ? 'on' : ''} onClick={() => { setMode('agent'); setPane('editor'); }}>Agent</button>
-          <button className={mode === 'chat' ? 'on' : ''} onClick={() => { setMode('chat'); setPane('editor'); }}>Chat</button>
-          <button className={mode === 'editor' ? 'on' : ''} onClick={() => { setMode('editor'); setPane('editor'); }}>Editor</button>
+          <button aria-pressed={mode === 'agent'} className={mode === 'agent' ? 'on' : ''} onClick={() => { switchMode('agent'); }}>Agent</button>
+          <button aria-pressed={mode === 'editor'} className={mode === 'editor' ? 'on' : ''} onClick={() => { switchMode('editor'); }}>IDE</button>
         </div>
         <div className="top-actions">
+          {mode !== 'chat' && <><button className="ghost maven-toggle" aria-pressed={mavenOpen} onClick={toggleMaven}>Maven</button><div className="launch-selector">
+            <select aria-label="Run configuration" value={selectedLaunch?.path || ''} onChange={(event) => {
+              if (event.target.value === ':configure') showRun()
+              else setLaunchTarget(event.target.value)
+            }}>
+              {!selectedLaunch && <option value="">No run configuration</option>}
+              {launchCatalog.applications.map((item) => <option key={item.path} value={item.path}>{item.className.split('.').at(-1)}</option>)}
+              <option value=":configure">Edit Configurations…</option>
+            </select>
+            <button className="ghost run-toggle" onClick={() => executeApplication(false)} aria-label="Run application" title="Run">▶</button>
+            <button className="ghost run-toggle" onClick={() => executeApplication(true)} disabled={!selectedLaunch} aria-label="Debug application" title="Debug">♧</button>
+            <button type="button" className="ghost run-toggle" onClick={showRun} aria-label="Edit Run/Debug configurations" title="Edit Run/Debug configurations">⋮</button>
+          </div></>}
+          {mode !== 'chat' && <button className="ghost workbench-icon-button" title="Search Everywhere (Double Shift)" aria-label="Search Everywhere" onClick={() => setSearchEverywhere(true)}><WorkbenchIcon name="search" /></button>}
           <div className="picker-wrap">
-            <button className="model-btn" onClick={() => setPickerOpen((v) => !v)}>
-              <span className={`dot ${selected.tier}`} />
-              <span className="model-name">{selected.label}</span>
-              <em>{selected.tier}</em>
+            <button
+              className="model-btn workbench-icon-button"
+              title={`AI model: ${selected.label}`}
+              aria-label={`Choose AI model, currently ${selected.label}`}
+              aria-expanded={pickerOpen}
+              onClick={() => setPickerOpen((open) => !open)}
+            >
+              <WorkbenchIcon name="robot" />
             </button>
             {pickerOpen && (
               <>
                 <div className="picker-overlay" onClick={() => setPickerOpen(false)} />
                 <div className="picker" onClick={(e) => e.stopPropagation()}>
-                  <div className="picker-label">Free (No Token Required)</div>
+                  <div className="picker-label">Pollinations (Server Key)</div>
                   {catalog.free.map((m) => (
                     <button key={m.id} className={m.id === selected.id ? 'on' : ''} onClick={() => pickModel(m.id)}>
                       <strong>{m.label}</strong>
@@ -1516,7 +2345,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               </>
             )}
           </div>
-          <span className="chip">{linked ? 'ready' : 'needs token'}</span>
+          <span className="chip workbench-icon-button" role="img" aria-label={keyStatus} title={keyStatus}><WorkbenchIcon name="key" /></span>
           <button
             className={`${leftOpen ? 'ghost' : 'primary'} panel-toggle-btn ${leftOpen ? 'on' : ''}`}
             onClick={() => setLeftOpen((v) => !v)}
@@ -1527,13 +2356,14 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           </button>
           <button
             className={`${rightOpen ? 'ghost' : 'primary'} panel-toggle-btn ${rightOpen ? 'on' : ''}`}
-            onClick={() => setRightOpen((v) => !v)}
-            title={rightOpen ? "Hide AI Chat (Ctrl+J)" : "Open AI Chat (Ctrl+J)"}
+            onClick={() => { if (rightOpen && mode !== 'agent') switchMode('editor'); else switchMode('chat') }}
+            hidden={mode === 'chat'}
+            title={rightOpen ? 'Hide Assistant (Ctrl+J)' : 'Open Assistant (Ctrl+J)'}
           >
             <span className="panel-ico">{rightOpen ? '◨' : '💬'}</span>
-            <span className="panel-btn-label">{rightOpen ? 'Chat' : 'Open Chat'}</span>
+            <span className="panel-btn-label">AI Chat</span>
           </button>
-          <button className="ghost pane-btn" onClick={() => setPane(pane === 'chat' ? 'editor' : 'chat')}>
+          <button className="ghost pane-btn" onClick={() => pane === 'chat' ? setPane('editor') : openChat()}>
             {pane === 'chat' ? 'Work' : 'Chat'}
           </button>
           <button
@@ -1544,22 +2374,22 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             <span className="user-pill-sparkle">✦</span>
             <span>{userName ? `Hi, ${userName}` : 'Set Name'}</span>
           </button>
-          <button className="ghost tokens-btn" onClick={() => setVaultOpen(true)}>Tokens</button>
-          <button
-            className="ghost settings-btn"
-            onClick={() => setSettingsOpen(true)}
-            title="Studio Settings (Ctrl+,)"
-          >
-            ⚙️ Settings
-          </button>
+          <button className="ghost tokens-btn workbench-icon-button" aria-label="Tokens" title="Tokens" onClick={() => setVaultOpen(true)}><WorkbenchIcon name="token" /></button>
+          <details className="toolbar-popover settings-overflow">
+            <summary aria-label="IDE settings menu" title="Settings">⚙</summary>
+            <div>
+              <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; setSettingsOpen(true) }}>Settings…</button>
+              <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; toggleProject() }}>Toggle Project Panel</button>
+              <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; toggleMaven() }}>Toggle Maven Panel</button>
+            </div>
+          </details>
           <button
             className={`ghost history-btn ${historyOpen ? 'on' : ''}`}
             onClick={() => setHistoryOpen(true)}
-            title="Task History & Past Sessions"
+            title="Task & Chat History"
+            aria-label="Task & Chat History"
           >
-            <span className="history-btn-icon">📜</span>
-            <span className="history-btn-text">History</span>
-            {taskHistory.length > 0 && <span className="history-badge-count">{taskHistory.length}</span>}
+            <span className="history-btn-icon" aria-hidden="true">↶</span>
           </button>
           <button className="ghost app-btn" onClick={() => setAppModalOpen(true)} title="Use as app on Windows, Mac & Phone">
             <span className="app-dot" />
@@ -1578,20 +2408,36 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
 
       <input
         type="file"
-        ref={fileInputRef}
+        ref={folderInputRef}
         webkitdirectory="true"
         directory="true"
         style={{ display: 'none' }}
         onChange={handleVirtualInput}
       />
+      <input type="file" ref={filesInputRef} multiple hidden onChange={handleVirtualInput} />
 
       <div
-        className={`shell pane-${pane} mode-${mode} ${leftOpen ? '' : 'hide-left'} ${rightOpen ? '' : 'hide-right'} ${isResizing ? 'resizing' : ''}`}
+        className={`shell pane-${pane} mode-${mode} ${leftOpen ? '' : 'hide-left'} ${rightOpen || mavenSideOpen ? '' : 'hide-right'} ${mavenSideOpen && !rightOpen ? 'show-maven-side' : ''} ${isResizing ? 'resizing' : ''}`}
         style={{
           '--left-w': `${leftWidth}px`,
           '--right-w': `${rightWidth}px`
         }}
       >
+        <nav className="workbench-strip project-strip" aria-label="Project tools">
+          <button type="button" aria-label="Structure" title="Structure" aria-pressed={structureOpen} onClick={toggleStructure}>▥</button>
+          <button type="button" aria-label="Toggle Project" title="Project (Ctrl+B)" aria-pressed={leftOpen} onClick={toggleProject}>▤</button>
+          <button type="button" aria-label="Search Everywhere" title="Search Everywhere" onClick={() => setSearchEverywhere(true)}>⌕</button>
+          <button type="button" aria-label="Settings" title="Settings" onClick={() => setSettingsOpen(true)}>⚙</button>
+        </nav>
+        <nav className="workbench-strip tools-strip" aria-label="Workspace tools">
+          <button type="button" aria-label="Toggle AI Chat" title="AI Chat" aria-pressed={rightOpen && mode === 'editor'} onClick={toggleAssistant}>◫</button>
+          <button type="button" aria-label="Toggle Maven" title="Maven" aria-pressed={mavenSideOpen && !rightOpen} onClick={toggleMaven}>m</button>
+          </nav>
+        <nav className="workbench-strip bottom-tools-strip" aria-label="Bottom tools">
+          <button type="button" aria-label="Build" title="Build Output" onClick={() => { setTerminalOpen(false); setMavenOpen(true) }}>⚒</button>
+          <button type="button" aria-label="Maven Terminal" title="Maven Terminal" aria-pressed={mavenOpen && terminalOpen} onClick={toggleTerminal}>›_</button>
+          <button type="button" aria-label="Run Application" title="Run Application" onClick={showRun}>▷</button>
+        </nav>
         {!leftOpen && (
           <button
             className="edge-reopen-tab left"
@@ -1616,8 +2462,30 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               <>
                 <span title={workspace.root}>{workspace.name}</span>
                 <div className="side-head-actions">
-                  <button className="ghost tiny" onClick={openLocalFolder} title="Change folder">Open</button>
-                  <button className="ghost tiny" onClick={closeProject} title="Close project">✕</button>
+                  <button className="ghost tiny" onClick={(event) => {
+                    const anchor = event.currentTarget.getBoundingClientRect()
+                    openProjectMenu({ clientX: anchor.left, clientY: anchor.bottom, preventDefault() {} }, tree)
+                    setNewMenuOpen(true)
+                  }} disabled={!tree} aria-label="New project item" title="New project item">＋</button>
+                  <button className="ghost tiny" onClick={revealCurrentFile} disabled={!active} aria-label="Reveal Open File" title="Reveal Open File">◎</button>
+                  <button className="ghost tiny" onClick={expandProject} disabled={!tree} aria-label="Expand All" title="Expand All"><TreeIcon name="expand" /></button>
+                  <button className="ghost tiny" onClick={collapseProject} disabled={!tree} aria-label="Collapse All" title="Collapse All"><TreeIcon name="collapse" /></button>
+                  <button type="button" ref={projectViewButton} className="ghost tiny" aria-expanded={Boolean(projectViewPosition)} aria-controls="project-view-popup" aria-label="Project view options" title="Project view options" onClick={(event) => {
+                    const anchor = event.currentTarget.getBoundingClientRect()
+                    setProjectViewPosition(projectViewPosition ? null : {
+                      left: Math.max(4, Math.min(anchor.left, window.innerWidth - 228)),
+                      top: Math.max(4, Math.min(anchor.bottom + 4, window.innerHeight - 190))
+                    })
+                  }}>⋮</button>
+                  {projectViewPosition && createPortal(
+                    <div className="project-view-popup" id="project-view-popup" role="group" aria-label="Project view options" style={projectViewPosition}>
+                      <button type="button" autoFocus onClick={() => { setProjectViewPosition(null); openFolderPicker() }}>Open Project…</button>
+                      <label><input type="checkbox" checked={compactPackages} onChange={(event) => setCompactPackages(event.target.checked)} /> Compact Java packages</label>
+                      <label><input type="checkbox" checked={foldersFirst} onChange={(event) => setFoldersFirst(event.target.checked)} /> Folders first</label>
+                      <label><input type="checkbox" checked={structureOpen} onChange={toggleStructure} /> Show Structure</label>
+                      <button type="button" onClick={() => { setProjectViewPosition(null); closeProject(true) }}>Remove Project from Sidebar</button>
+                    </div>, document.body
+                  )}
                   <button className="ghost tiny" onClick={() => setLeftOpen(false)} title="Hide Sidebar (Ctrl+B)">◀</button>
                 </div>
               </>
@@ -1625,12 +2493,25 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               <>
                 <span>No Project</span>
                 <div className="side-head-actions">
-                  <button className="primary tiny" onClick={openLocalFolder}>Open</button>
+                  <button className="primary tiny" onClick={openFolderPicker}>Open</button>
                   <button className="ghost tiny" onClick={() => setLeftOpen(false)} title="Hide Sidebar (Ctrl+B)">◀</button>
                 </div>
               </>
             )}
           </div>
+          {!workspace.root && recentProjects.length > 0 && <div className="sidebar-recent-projects">
+            <strong>Recent Projects</strong>
+            {recentProjects.map((item) => <div key={item.root}>
+              <button className="ghost tiny" title={item.root} onClick={() => selectFolder(item.root)} disabled={openingFolder}>{item.name}</button>
+              <button className="ghost tiny" aria-label={`Remove ${item.name} from recent projects`} title="Remove from recent projects" onClick={() => forgetRecentProject(item.root)}>×</button>
+            </div>)}
+          </div>}
+          <div className="project-import-actions">
+            <button className="ghost tiny workbench-icon-button" aria-label="Import Folder" title="Import Folder" onClick={() => importFiles(folderInputRef)}><WorkbenchIcon name="folder" /></button>
+            <button className="ghost tiny workbench-icon-button" aria-label="Import Files" title="Import Files" onClick={() => importFiles(filesInputRef)}><WorkbenchIcon name="files" /></button>
+            <button className="ghost tiny workbench-icon-button" aria-label="Server Browser" title="Server Browser" onClick={openFolderPicker}><WorkbenchIcon name="server" /></button>
+          </div>
+          {importNotice && <div className="import-notice" role="status">{importNotice}</div>}
           <div className="search-box">
             <input
               value={search}
@@ -1659,17 +2540,29 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                   onOpen={openFile}
                   openDirs={openDirs}
                   toggleDir={toggleDir}
+                  loadDirectory={virtualFiles ? null : loadProjectDirectory}
+                  onProjectMenu={openProjectMenu}
+                  compactPackages={compactPackages}
+                  foldersFirst={foldersFirst}
                 />
               ) : !workspace.root ? (
                 <div className="no-project-box">
                   <p>No project folder opened.<br/>Open your local project to work on it.</p>
-                  <button className="primary" onClick={openLocalFolder}>📂 Open Local Folder</button>
-                  <button className="ghost tiny" onClick={openFolderPicker}>Server Browser</button>
+                  <button className="primary" onClick={openFolderPicker}>Open Project</button>
                 </div>
               ) : (
                 <div className="empty"><p>Loading tree</p></div>
               )}
             </div>
+          )}
+          {structureOpen && (
+            <section className="structure-tool" aria-label="Structure">
+              <header><strong>Structure</strong><button className="ghost tiny" onClick={toggleStructure} aria-label="Hide Structure">×</button></header>
+              {outline.length ? outline.map((item) => <button type="button" key={item.offset} className={item.kind} onClick={() => {
+                setPane('editor')
+                setEditorJump({ path: active, offset: item.offset })
+              }}><TreeIcon name={item.kind === 'type' ? 'java' : 'method'} />{item.label}</button>) : <p>Open a Java source file to see its declarations.</p>}
+            </section>
           )}
           {leftOpen && (
             <div
@@ -1730,9 +2623,9 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     className="ghost tiny cm-action-btn cm-history-btn"
                     onClick={() => setHistoryOpen(true)}
                     title="Open Task & Chat History"
+                    aria-label="Open Task & Chat History"
                   >
-                    <span>📜</span>
-                    <span className="cm-btn-text">History</span>
+                    <span aria-hidden="true">↶</span>
                   </button>
                   <button
                     type="button"
@@ -1766,7 +2659,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 </div>
               </div>
 
-              <div className="chat-mode-feed-wrap" ref={feedRef}>
+              <div className="chat-mode-feed-wrap" ref={mode === 'chat' ? feedRef : null}>
                 {isTempChat && (
                   <div className="temp-chat-banner">
                     <div className="temp-banner-info">
@@ -1848,6 +2741,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 ) : (
                   <div className="chat-mode-thread">
                     {messages.map((m, i) => {
+                      if (m.role === 'proposal') return null
                       if (m.role === 'tool') {
                         return (
                           <div className="tool" key={i}>
@@ -2032,6 +2926,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               </div>
 
               {/* Chat Mode Bottom Input Capsule */}
+              {busy && <div className="chat-stream" role="status">{streamText || 'Waiting for response…'}</div>}
               <div className="chat-mode-bottom-bar">
                 <form
                   className="chat-mode-input-capsule"
@@ -2064,7 +2959,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     <button
                       type="button"
                       className={`resp-icon-btn ${listening ? 'listening' : ''}`}
-                      onClick={() => toggleListening('draft')}
+                      onClick={toggleListening}
                       title={listening ? "Listening... click to stop" : "Voice input"}
                     >
                       🎙️
@@ -2083,18 +2978,16 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     </div>
 
                     <button
-                      type="submit"
+                      type={busy ? "button" : "submit"}
                       className="cm-send-btn"
-                      disabled={!draft.trim() || busy}
-                      title="Send prompt (Enter)"
+                      onClick={busy ? stopRequest : undefined}
+                      disabled={!busy && !draft.trim()}
+                      title={busy ? "Stop response" : "Send prompt (Enter)"}
                     >
-                      {busy ? '⏳' : '↑'}
+                      {busy ? '■' : '↑'}
                     </button>
                   </div>
                 </form>
-                <div className="chat-mode-disclaimer">
-                  Aether AI can make mistakes. Verify important code and data.
-                </div>
               </div>
             </div>
           ) : (
@@ -2109,17 +3002,57 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     📂 Open Files (Ctrl+B)
                   </button>
                 )}
-                <div className="tabs">
-                  {tabs.map((t) => (
-                    <button
-                      key={t.path}
-                      className={`tab ${t.path === active ? 'on' : ''}`}
-                      onClick={() => setActive(t.path)}
-                    >
-                      {t.path.split('/').pop()}{dirty[t.path] ? ' *' : ''}
-                    </button>
-                  ))}
+                <div className="editor-tab-strip" ref={editorTabStrip}>
+                <div className="tabs editor-visible-tabs">
+                  {visibleTabs.map((tab) => {
+                    const name = tab.path.split('/').pop()
+                    const selected = tab.path === active
+                    return (
+                      <div key={tab.path} className={`tab editor-tab ${selected ? 'on' : ''}`} onContextMenu={(event) => {
+                        openProjectMenu(event, { path: tab.path, type: 'file' })
+                        setProjectMenu((previous) => ({ ...previous, tab: true }))
+                      }}>
+                        <button
+                          type="button"
+                          className="editor-tab-label"
+                          title={tab.path}
+                          aria-current={selected ? 'true' : undefined}
+                          onClick={() => { setActive(tab.path); setEditorNotice('') }}
+                        >
+                          {name}{isDirty(tab) ? ' ●' : ''}
+                        </button>
+                        <button
+                          type="button"
+                          className="editor-tab-close"
+                          title="Close (Ctrl+F4). Alt+click to close other tabs."
+                          aria-label={`Close ${tab.path}. Alt+click to close other tabs.`}
+                          onClick={(event) => closeEditorTabs(tab.path, event.altKey)}
+                        >×</button>
+                      </div>
+                    )
+                  })}
                 </div>
+                  <div className="editor-tab-tools">
+                    {hiddenTabs.length > 0 && <button type="button" className="editor-tab-tool" title="Show hidden open files" aria-label="Show hidden open files" aria-expanded={tabPopup?.kind === 'hidden'} onClick={(event) => openTabPopup(event, 'hidden')}><span aria-hidden="true" className="editor-tab-chevron" /></button>}
+                    <button type="button" className="editor-tab-tool" title="Editor tab options" aria-label="Editor tab options" aria-expanded={Boolean(tabPopup && tabPopup.kind !== 'hidden')} onClick={(event) => openTabPopup(event, 'options')}><span aria-hidden="true" className="editor-tab-ellipsis" /></button>
+                  </div>
+                </div>
+                {tabPopup && createPortal(<div ref={tabPopupRef} className="project-view-popup editor-tab-popup"
+                  style={{ left: tabPopup.left, top: tabPopup.top, maxHeight: tabPopup.maxHeight }}
+                  aria-label={tabPopup.kind === 'options' ? 'Editor tab options' : 'Open files'}>
+                  {tabPopup.kind === 'options' ? <>
+                    <button type="button" autoFocus onClick={() => setTabPopup({ ...tabPopup, kind: 'recent' })}>Recent Files</button>
+                    <button type="button" onClick={() => { setTabPopup(null); setSearchEverywhere(true) }}>Go to File…</button>
+                    <button type="button" disabled={!tabs.length} onClick={() => { setTabPopup(null); closeEditorTabs(tabs[0].path, false, 'all') }}>Close All Tabs</button>
+                    <button type="button" disabled={!reopenCandidate} onClick={() => selectPopupFile(reopenCandidate.path)}>Reopen Closed Tab</button>
+                    <button type="button" onClick={() => { setTabPopup(null); setSettingsOpen(true) }}>Editor Settings…</button>
+                  </> : (tabPopup.kind === 'hidden' ? hiddenTabs.map((tab) => tab.path)
+                    : [...new Set([active, ...tabs.map((tab) => tab.path), ...closedEditorFiles.filter((item) => item.root === workspace.root).map((item) => item.path)].filter(Boolean))]
+                  ).map((path, index) => <button type="button" key={path} autoFocus={index === 0} title={path} onClick={() => selectPopupFile(path)}>
+                    <TreeIcon name={path.endsWith('.java') ? 'java' : 'file'} />
+                    <span>{path.split('/').at(-1)}</span>
+                  </button>)}
+                </div>, document.body)}
                 {current && (current.path.toLowerCase().endsWith('.md') || current.path.toLowerCase().endsWith('.markdown')) && (
                   <div className="md-view-mode-pill">
                     <button
@@ -2157,19 +3090,6 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     💬 Open Chat (Ctrl+J)
                   </button>
                 )}
-                {current && (
-                  <button
-                    className="ghost tiny close-tab"
-                    onClick={() => {
-                      const closing = current.path
-                      setTabs((prev) => {
-                        const rest = prev.filter((t) => t.path !== closing)
-                        setActive(rest[rest.length - 1]?.path || '')
-                        return rest
-                      })
-                    }}
-                  >Close</button>
-                )}
               </div>
               {current ? (
                 <div className="editor-wrap">
@@ -2179,15 +3099,18 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     </div>
                   ) : (current.path.toLowerCase().endsWith('.md') || current.path.toLowerCase().endsWith('.markdown')) && mdMode === 'split' ? (
                     <div className="editor-split-wrap">
-                      <textarea
-                        className="editor editor-split-left"
-                        style={{
-                          fontSize: `${settings.editorFontSize || 13}px`,
-                          whiteSpace: settings.editorWordWrap ? 'pre-wrap' : 'pre'
-                        }}
+                      <CodeEditor
+                        jump={editorJump}
+                        mainLine={activeMain ? outline.find((item) => item.runnable)?.line : undefined}
+                        onRunMain={activeMain ? () => executeApplication(false, activeMain) : undefined}
+                        onDebugMain={activeMain ? () => executeApplication(true, activeMain) : undefined}
+                        key={current.path}
+                        className="editor-split-left"
+                        path={current.path}
                         value={current.content}
-                        onChange={(e) => updateContent(e.target.value)}
-                        spellCheck={false}
+                        fontSize={settings.editorFontSize || 13}
+                        wordWrap={settings.editorWordWrap}
+                        onChange={updateContent}
                       />
                       <div className="editor-split-divider" />
                       <div className="editor-md-reader editor-split-right">
@@ -2195,559 +3118,83 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       </div>
                     </div>
                   ) : (
-                    <textarea
-                      className="editor"
-                      style={{
-                        fontSize: `${settings.editorFontSize || 13}px`,
-                        whiteSpace: settings.editorWordWrap ? 'pre-wrap' : 'pre'
-                      }}
+                    <CodeEditor
+                      breakpointLines={projectBreakpoints[current.path]}
+                      onToggleBreakpoint={toggleBreakpoint}
+                        jump={editorJump}
+                        mainLine={activeMain ? outline.find((item) => item.runnable)?.line : undefined}
+                        onRunMain={activeMain ? () => executeApplication(false, activeMain) : undefined}
+                        onDebugMain={activeMain ? () => executeApplication(true, activeMain) : undefined}
+                      key={current.path}
+                      workspace={!webDirHandle && !virtualFiles ? workspace.root : null}
+                      path={current.path}
                       value={current.content}
-                      onChange={(e) => updateContent(e.target.value)}
-                      spellCheck={false}
+                      fontSize={settings.editorFontSize || 13}
+                      wordWrap={settings.editorWordWrap}
+                      onChange={updateContent}
                     />
                   )}
                   <div className="editor-bar">
-                    <span className="path">{current.path}</span>
+                    <span className="path" role="status">{editorNotice || current.path}</span>
                     <div className="editor-bar-actions">
+                      {current.path.endsWith('.java') && /\bstatic\s+void\s+main\s*\(/.test(current.content) && (
+                        <button className="ghost tiny run-toggle workbench-icon-button" onClick={() => executeApplication(false, activeMain)} aria-label="Run main" title="Run main"><TreeIcon name="play" /></button>
+                      )}
                       <button
-                        className="ghost tiny ask-ai-file-btn"
+                        className="ghost tiny ask-ai-file-btn workbench-icon-button"
                         onClick={() => {
                           setDraft(`Analyze and explain ${current.path}: `)
                           openChat()
                         }}
                         title="Ask AI about this file"
+                        aria-label="Ask AI about this file"
                       >
-                        💬 Ask AI
+                        <WorkbenchIcon name="chat" />
                       </button>
-                      <button className="primary" onClick={saveFile}>Save</button>
+                      <button className="primary workbench-icon-button" onClick={saveFile}
+                        title={!workspace.root || virtualFiles ? 'Download file' : 'Save file'}
+                        aria-label={!workspace.root || virtualFiles ? 'Download file' : 'Save file'}>
+                        <WorkbenchIcon name={!workspace.root || virtualFiles ? 'download' : 'save'} />
+                      </button>
                     </div>
                   </div>
                 </div>
-              ) : mode === 'editor' ? (
-                <div className="editor-workspace-empty">
-                  <div className="editor-empty-badge">
-                    <span>✦</span>
-                    <span>Editor Workspace</span>
-                  </div>
-                  <MiniRobot mode="editor" />
-                  <h2 className="editor-empty-title">Code &amp; Markdown Studio</h2>
-                  <p className="editor-empty-desc">
-                    Open a file from the explorer, select a local project folder, or create a fresh markdown document to start writing.
-                  </p>
-                  <div className="editor-empty-actions">
-                    <button
-                      type="button"
-                      className="editor-action-card primary-action"
-                      onClick={() => createNewFile('notes.md')}
-                    >
-                      <span>📄</span>
-                      <strong>New Markdown File</strong>
-                    </button>
-                    <button
-                      type="button"
-                      className="editor-action-card"
-                      onClick={openLocalFolder}
-                    >
-                      <span>📂</span>
-                      <strong>Open Local Project</strong>
-                    </button>
-                    <button
-                      type="button"
-                      className="editor-action-card"
-                      onClick={() => setMode('chat')}
-                    >
-                      <span>💬</span>
-                      <strong>Open AI Chat Mode</strong>
+              ) : (
+                <div className="workbench-home">
+                  <div className="workbench-symbol" aria-hidden="true">{mode === 'agent' ? '✦' : '⌘'}</div>
+                  <h2>{mode === 'agent' ? 'Workspace agent' : workspace.name || 'Your workspace'}</h2>
+                  <p>{mode === 'agent'
+                    ? 'Describe a task in the Agent panel. Review proposed files here before saving.'
+                    : workspace.root ? 'Choose a file in the explorer to start editing.' : 'Open a project folder to browse, search, and edit your files.'}</p>
+                  <div className="workbench-actions">
+                    <button className="primary" onClick={openFolderPicker}>Open project</button>
+                    <button className="ghost" onClick={() => mode === 'agent' ? openChat() : createNewFile()}>
+                      {mode === 'agent' ? 'Focus agent' : 'New Markdown'}
                     </button>
                   </div>
                   <div className="editor-shortcuts-guide">
-                    <span className="shortcut-hint"><kbd>Ctrl</kbd>+<kbd>B</kbd> Toggle Files</span>
-                    <span className="shortcut-hint"><kbd>Ctrl</kbd>+<kbd>J</kbd> Toggle Chat</span>
-                    <span className="shortcut-hint"><kbd>Ctrl</kbd>+<kbd>,</kbd> Settings</span>
+                    <span className="shortcut-hint"><kbd>Ctrl</kbd>+<kbd>B</kbd> Files</span>
+                    <span className="shortcut-hint"><kbd>Ctrl</kbd>+<kbd>J</kbd> Assistant</span>
+                    <span className="shortcut-hint"><kbd>Ctrl</kbd>+<kbd>S</kbd> Save</span>
                   </div>
                 </div>
-              ) : (
-                <div className="gemini-landing">
-              {/* Cosmic Blue Atmospheric Aura Background */}
-              <div className="gemini-aura-container" aria-hidden="true">
-                <div className="aura-glow aura-glow-outer" />
-                <div className="aura-glow aura-glow-core" />
-                <div className="aura-glow aura-glow-beam" />
-                <div className="aura-glow aura-glow-cyan" />
-                <div className="aura-sparkle sparkle-1">✦</div>
-                <div className="aura-sparkle sparkle-2">✦</div>
-                <div className="aura-sparkle sparkle-3">✦</div>
-              </div>
-
-              <div className="gemini-landing-content">
-                <div className="gemini-badge-row">
-                  <span className="gemini-ai-pill">
-                    <span className="sparkle-icon">✨</span>
-                    <span>Aether AI Studio</span>
-                  </span>
-                </div>
-
-                <MiniRobot mode={mode} />
-
-                <h2 className="gemini-heading">
-                  {workspace.root
-                    ? `What can I help with in ${workspace.name}?`
-                    : formattedName
-                    ? `What can I help with, ${formattedName}?`
-                    : 'What can I help with today?'}
-                </h2>
-
-                {/* Gemini-style Center Prompt Pill Capsule */}
-                <form
-                  className="gemini-capsule"
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    if (centerDraft.trim()) {
-                      send(centerDraft.trim())
-                    }
-                  }}
-                >
-                  <div className="capsule-plus-wrap">
-                    <button
-                      type="button"
-                      className="capsule-plus-btn"
-                      onClick={() => setPlusMenuOpen((v) => !v)}
-                      title="Attach or open project folder"
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                        <line x1="12" y1="5" x2="12" y2="19" />
-                        <line x1="5" y1="12" x2="19" y2="12" />
-                      </svg>
-                    </button>
-                    {plusMenuOpen && (
-                      <>
-                        <div className="picker-overlay" onClick={() => setPlusMenuOpen(false)} />
-                        <div className="capsule-menu" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPlusMenuOpen(false)
-                              openLocalFolder()
-                            }}
-                          >
-                            <span className="menu-icon">📂</span>
-                            <div className="menu-text">
-                              <strong>Open Local Project</strong>
-                              <small>Direct browser file access (Web FS)</small>
-                            </div>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPlusMenuOpen(false)
-                              openFolderPicker()
-                            }}
-                          >
-                            <span className="menu-icon">🌐</span>
-                            <div className="menu-text">
-                              <strong>Browse Server Workspace</strong>
-                              <small>Pick folder on host server</small>
-                            </div>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPlusMenuOpen(false)
-                              setNameDraft(userName)
-                              setWelcomeModalOpen(true)
-                            }}
-                          >
-                            <span className="menu-icon">👤</span>
-                            <div className="menu-text">
-                              <strong>Personalize Name</strong>
-                              <small>{userName ? `Current: ${userName}` : 'Set your name'}</small>
-                            </div>
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  <input
-                    type="text"
-                    className="capsule-input"
-                    value={centerDraft}
-                    onChange={(e) => setCenterDraft(e.target.value)}
-                    placeholder={
-                      workspace.root
-                        ? `Ask about ${workspace.name} or describe what to build...`
-                        : "Ask Aether or describe what you want to build..."
-                    }
-                    autoComplete="off"
-                    spellCheck="false"
-                  />
-
-                  <div className="capsule-model-wrap">
-                    <button
-                      type="button"
-                      className="capsule-model-pill"
-                      onClick={() => setCapsulePickerOpen((v) => !v)}
-                      title="Select AI Model"
-                    >
-                      <span className="pill-name">{modelShortName}</span>
-                      <span className="pill-arrow">⌵</span>
-                    </button>
-
-                    {capsulePickerOpen && (
-                      <>
-                        <div className="picker-overlay" onClick={() => setCapsulePickerOpen(false)} />
-                        <div className="capsule-picker-dropdown" onClick={(e) => e.stopPropagation()}>
-                          <div className="picker-section-title">⚡ Free AI Models</div>
-                          {catalog.free.map((m) => (
-                            <button
-                              key={m.id}
-                              type="button"
-                              className={`capsule-picker-item ${m.id === selected.id ? 'active' : ''}`}
-                              onClick={() => {
-                                pickModel(m.id)
-                                setCapsulePickerOpen(false)
-                              }}
-                            >
-                              <div className="picker-item-main">
-                                <span className="item-label">{m.label}</span>
-                                <span className="item-badge free">FREE</span>
-                              </div>
-                              <span className="item-blurb">{m.blurb}</span>
-                            </button>
-                          ))}
-
-                          <div className="picker-section-title-row">
-                            <span className="picker-section-title">✨ Google Gemini</span>
-                            <button
-                              type="button"
-                              className="capsule-info-header-btn"
-                              onClick={() => {
-                                setCapsulePickerOpen(false)
-                                openTokenHelper('gemini')
-                              }}
-                              title="How to get free Gemini key"
-                            >
-                              ℹ Get Key
-                            </button>
-                          </div>
-                          {catalog.premium.filter((m) => m.provider === 'gemini').map((m) => (
-                            <div key={m.id} className={`capsule-picker-row ${m.id === selected.id ? 'active' : ''}`}>
-                              <button
-                                type="button"
-                                className="capsule-picker-item"
-                                onClick={() => {
-                                  pickModel(m.id)
-                                  setCapsulePickerOpen(false)
-                                }}
-                              >
-                                <div className="picker-item-main">
-                                  <span className="item-label">{m.label}</span>
-                                  <span className={`item-badge ${vault.gemini ? 'ready' : 'token'}`}>
-                                    {vault.gemini ? 'READY' : 'KEY REQ'}
-                                  </span>
-                                </div>
-                                <span className="item-blurb">{m.blurb}</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="capsule-row-info-btn"
-                                title="View step-by-step instructions to get Gemini token"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setCapsulePickerOpen(false)
-                                  openTokenHelper('gemini')
-                                }}
-                              >
-                                ℹ
-                              </button>
-                            </div>
-                          ))}
-
-                          <div className="picker-section-title-row">
-                            <span className="picker-section-title">🧠 ChatGPT / OpenAI</span>
-                            <button
-                              type="button"
-                              className="capsule-info-header-btn"
-                              onClick={() => {
-                                setCapsulePickerOpen(false)
-                                openTokenHelper('openai')
-                              }}
-                              title="How to get OpenAI key"
-                            >
-                              ℹ Get Key
-                            </button>
-                          </div>
-                          {catalog.premium.filter((m) => m.provider === 'openai').map((m) => (
-                            <div key={m.id} className={`capsule-picker-row ${m.id === selected.id ? 'active' : ''}`}>
-                              <button
-                                type="button"
-                                className="capsule-picker-item"
-                                onClick={() => {
-                                  pickModel(m.id)
-                                  setCapsulePickerOpen(false)
-                                }}
-                              >
-                                <div className="picker-item-main">
-                                  <span className="item-label">{m.label}</span>
-                                  <span className={`item-badge ${vault.openai ? 'ready' : 'token'}`}>
-                                    {vault.openai ? 'READY' : 'KEY REQ'}
-                                  </span>
-                                </div>
-                                <span className="item-blurb">{m.blurb}</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="capsule-row-info-btn"
-                                title="View step-by-step instructions to get OpenAI token"
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setCapsulePickerOpen(false)
-                                  openTokenHelper('openai')
-                                }}
-                              >
-                                ℹ
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {centerDraft.trim() ? (
-                    <button
-                      type="submit"
-                      className="capsule-send-btn"
-                      title="Send message (Enter)"
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="12" y1="19" x2="12" y2="5" />
-                        <polyline points="5 12 12 5 19 12" />
-                      </svg>
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className={`capsule-mic-btn ${listening ? 'listening' : ''}`}
-                      onClick={toggleListening}
-                      title={listening ? "Listening... click to stop" : "Voice input"}
-                    >
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                        <line x1="12" y1="19" x2="12" y2="22" />
-                      </svg>
-                    </button>
-                  )}
-                </form>
-
-                {/* Modern Landing Controls: Bookmarks & System Info */}
-                <div className="gemini-modern-controls">
-                  {/* Bookmarks Popover Trigger */}
-                  <div className="landing-popover-anchor">
-                    <button
-                      type="button"
-                      className={`gemini-control-btn ${bookmarksOpen ? 'active' : ''}`}
-                      onClick={() => {
-                        setBookmarksOpen((v) => !v)
-                        setInfoOpen(false)
-                      }}
-                      title="Quick Workspace Actions & Starter Prompts"
-                    >
-                      <span className="control-btn-icon">🔖</span>
-                      <span className="control-btn-label">Bookmarks</span>
-                      <span className="control-btn-badge">6</span>
-                      <span className="control-btn-arrow">{bookmarksOpen ? '▲' : '▼'}</span>
-                    </button>
-
-                    {bookmarksOpen && (
-                      <>
-                        <div className="picker-overlay" onClick={() => setBookmarksOpen(false)} />
-                        <div className="gemini-modern-popover bookmarks-popover" onClick={(e) => e.stopPropagation()}>
-                          <div className="popover-top">
-                            <div className="popover-title-row">
-                              <span className="popover-icon">🔖</span>
-                              <div>
-                                <strong>Bookmarks &amp; Quick Actions</strong>
-                                <p>Workspace tools and one-tap starter prompts</p>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              className="popover-x-btn"
-                              onClick={() => setBookmarksOpen(false)}
-                            >
-                              ✕
-                            </button>
-                          </div>
-
-                          <div className="popover-body">
-                            <div className="popover-group-label">📂 Workspace Shortcuts</div>
-                            <div className="popover-chips-row">
-                              <button
-                                type="button"
-                                className="gemini-shortcut-chip main-action"
-                                onClick={() => {
-                                  setBookmarksOpen(false)
-                                  openLocalFolder()
-                                }}
-                              >
-                                <span className="chip-ico">📂</span>
-                                <span>Open Local Project</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="gemini-shortcut-chip main-action"
-                                onClick={() => {
-                                  setBookmarksOpen(false)
-                                  openFolderPicker()
-                                }}
-                              >
-                                <span className="chip-ico">🌐</span>
-                                <span>Browse Workspace</span>
-                              </button>
-                            </div>
-
-                            <div className="popover-group-label" style={{ marginTop: 14 }}>✨ Starter Prompts</div>
-                            <div className="popover-chips-grid">
-                              <button
-                                type="button"
-                                className="gemini-shortcut-chip prompt-chip"
-                                onClick={() => {
-                                  setBookmarksOpen(false)
-                                  send("Build a modern, responsive web application with animated blue cosmic styling and interactive components")
-                                }}
-                              >
-                                <span className="chip-ico">✨</span>
-                                <span>Build modern web app</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="gemini-shortcut-chip prompt-chip"
-                                onClick={() => {
-                                  setBookmarksOpen(false)
-                                  send("Analyze and explain the architecture of this project")
-                                }}
-                              >
-                                <span className="chip-ico">💡</span>
-                                <span>Explain architecture</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="gemini-shortcut-chip prompt-chip"
-                                onClick={() => {
-                                  setBookmarksOpen(false)
-                                  send("Find potential bugs, edge cases, and performance bottlenecks")
-                                }}
-                              >
-                                <span className="chip-ico">🐛</span>
-                                <span>Find bugs</span>
-                              </button>
-                              <button
-                                type="button"
-                                className="gemini-shortcut-chip prompt-chip"
-                                onClick={() => {
-                                  setBookmarksOpen(false)
-                                  send("Create a reusable React UI component with clean state and styles")
-                                }}
-                              >
-                                <span className="chip-ico">⚡</span>
-                                <span>Generate component</span>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Info Popover Trigger */}
-                  <div className="landing-popover-anchor">
-                    <button
-                      type="button"
-                      className={`gemini-control-btn ${infoOpen ? 'active' : ''}`}
-                      onClick={() => {
-                        setInfoOpen((v) => !v)
-                        setBookmarksOpen(false)
-                      }}
-                      title="System Status & Engine Information"
-                    >
-                      <span className="control-btn-icon">ℹ️</span>
-                      <span className="control-btn-label">Info</span>
-                      <span className="control-live-dot" />
-                      <span className="control-btn-arrow">{infoOpen ? '▲' : '▼'}</span>
-                    </button>
-
-                    {infoOpen && (
-                      <>
-                        <div className="picker-overlay" onClick={() => setInfoOpen(false)} />
-                        <div className="gemini-modern-popover info-popover" onClick={(e) => e.stopPropagation()}>
-                          <div className="popover-top">
-                            <div className="popover-title-row">
-                              <span className="popover-icon">ℹ️</span>
-                              <div>
-                                <strong>System &amp; Runtime Info</strong>
-                                <p>Real-time environment &amp; workspace status</p>
-                              </div>
-                            </div>
-                            <button
-                              type="button"
-                              className="popover-x-btn"
-                              onClick={() => setInfoOpen(false)}
-                            >
-                              ✕
-                            </button>
-                          </div>
-
-                          <div className="popover-body">
-                            <div className="info-pills-grid">
-                              <div className="info-item">
-                                <span className="info-item-label">Network Port</span>
-                                <span className="g-pill info-pill">Port {networkInfo.port || window.location.port || '4576'}</span>
-                              </div>
-                              <div className="info-item">
-                                <span className="info-item-label">File Storage</span>
-                                <span className="g-pill info-pill">Direct Web File System</span>
-                              </div>
-                              <div className="info-item">
-                                <span className="info-item-label">Intelligence</span>
-                                <span className="g-pill info-pill">Multi-Model AI</span>
-                              </div>
-                              <div className="info-item">
-                                <span className="info-item-label">Dependencies</span>
-                                <span className="g-pill info-pill">Zero Local Dependencies</span>
-                              </div>
-                              <div className="info-item full-width">
-                                <span className="info-item-label">User Profile</span>
-                                <button
-                                  type="button"
-                                  className="g-pill user-link info-user-pill"
-                                  onClick={() => {
-                                    setInfoOpen(false)
-                                    setNameDraft(userName)
-                                    setWelcomeModalOpen(true)
-                                  }}
-                                  title="Click to customize your display name"
-                                >
-                                  👤 {userName ? `Hi, ${userName}` : 'Set Name'}
-                                  <span className="pill-edit-hint">✎ Edit</span>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+              )}
         </>
       )}
     </main>
 
-        <section className="chat">
+        {mavenSideOpen && !rightOpen && (
+          <aside className="maven-tool-window" aria-label="Maven">
+            <header><strong>Maven</strong><button className="ghost tiny" onClick={toggleMaven} aria-label="Hide Maven">×</button></header>
+            <MavenLifecycle key={workspace.root} onOpenPom={openFile} tree={webDirHandle || virtualFiles ? null : tree} project={workspace.name} onReload={reloadMavenTree} options={mavenOptions} setOptions={setMavenOptions} onRun={(pom, goal) => {
+              setTerminalOpen(false)
+              setMavenOpen(true)
+              setLaunchRequest({ pom, goal })
+            }} />
+          </aside>
+        )}
+
+        <section className="chat" aria-label="Workspace assistant">
           {rightOpen && (
             <div
               className={`resizer-handle right ${isResizing === 'right' ? 'active' : ''}`}
@@ -2762,7 +3209,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           )}
           <div className="chat-head">
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>{mode} thread</span>
+              <span>{mode === 'agent' ? 'Workspace Agent' : 'AI Chat'}</span>
               {isTempChat && <span className="history-mode-tag" style={{ background: 'rgba(168, 85, 247, 0.2)', color: '#d8b4fe', padding: '1px 5px', fontSize: 10 }}>🕶️ Temp</span>}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -2795,14 +3242,14 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               </button>
               <button
                 className="ghost tiny"
-                onClick={() => setRightOpen(false)}
+                onClick={() => { setRightOpen(false); setPane('editor') }}
                 title="Hide AI Chat (Ctrl+J)"
               >
                 ✕
               </button>
             </div>
           </div>
-          <div className="feed" ref={feedRef}>
+          <div className="feed" ref={mode !== 'chat' ? feedRef : null}>
             {isTempChat && (
               <div className="temp-chat-banner" style={{ margin: '8px 12px 12px 12px', padding: '6px 10px', fontSize: 11 }}>
                 <div className="temp-banner-info">
@@ -2823,7 +3270,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               <div className="empty chat-empty-guide">
                 <div className="chat-empty-icon">✨</div>
                 <h4>How can Aether help?</h4>
-                <p>Free AI is ready. Select a starter prompt below or ask anything about code.</p>
+                <p>Ask about your code, or choose a starter prompt.</p>
                 <div className="chat-empty-presets">
                   <button
                     type="button"
@@ -2859,6 +3306,16 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               </div>
             )}
             {messages.map((m, i) => {
+              if (m.role === 'proposal') {
+                return (
+                  <div className="tool proposal" key={i}>
+                    <b>{m.path}</b>
+                    <button className="ghost tiny" onClick={() => reviewProposal(m)} disabled={!workspace.root || Boolean(virtualFiles) || m.workspaceRoot !== workspace.root}>
+                      Review draft
+                    </button>
+                  </div>
+                )
+              }
               if (m.role === 'tool') {
                 return (
                   <div className="tool" key={i}>
@@ -2943,7 +3400,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                                 setTimeout(() => send(lastUser.text), 100)
                               }
                             }}
-                            title="Switch to free Aether Spark model"
+                            title="Switch to Aether Spark"
                           >
                             ⚡ Use Free Model
                           </button>
@@ -3180,7 +3637,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 </div>
               )
             })}
-            {busy && <div className="tool">thinking...</div>}
+            {busy && <div className="tool" role="status">{streamText || (mode === 'agent' ? 'Working on task…' : 'Waiting for response…')}</div>}
           </div>
           <div className="composer">
             <div className="quick-chips">
@@ -3208,13 +3665,40 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             />
             <div className="composer-row">
               <span className="hint">Enter to send (Shift+Enter for newline)</span>
-              <button className="primary send-btn" onClick={send} disabled={busy || !draft.trim()}>
-                {busy ? 'Thinking...' : 'Send ➔'}
+              <button className="primary send-btn" onClick={busy ? stopRequest : send} disabled={!busy && !draft.trim()}>
+                {busy ? 'Stop' : 'Send ➔'}
               </button>
             </div>
           </div>
         </section>
       </div>
+
+      <MavenPanel
+        key={workspace.root || ''}
+        project={webDirHandle || virtualFiles ? null : workspace.root}
+        tree={tree}
+        applications={launchCatalog.applications}
+        jdks={launchCatalog.jdks}
+        breakpointsByFile={projectBreakpoints}
+        selectedApplication={selectedLaunch?.path}
+        onSelectApplication={setLaunchTarget}
+        launch={runLaunch}
+        onStartDebug={() => { setTerminalOpen(false); setMavenOpen(true) }}
+        launchRequest={launchRequest}
+        onLaunchHandled={setLaunchRequest}
+        options={mavenOptions}
+        setOptions={setMavenOptions}
+        terminal={terminalOpen}
+        onToggleTerminal={toggleTerminal}
+        visible={mavenOpen && mode !== 'chat'}
+        onHide={() => setMavenOpen(false)}
+      />
+
+      <footer className="workbench-status">
+        <span>{workspace.name || 'No project'}</span>
+        {current && <span title={current.path}>{current.path}</span>}
+        {current && <span className="workbench-encoding">UTF-8</span>}
+      </footer>
 
       {/* Mobile Bottom Navigation Dock */}
       <nav className="dock" aria-label="Mobile Navigation">
@@ -3245,12 +3729,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         <button
           className={`dock-btn ${mode === 'chat' || pane === 'chat' ? 'on' : ''}`}
           onClick={() => {
-            if (mode === 'chat') {
-              setPane('editor')
-            } else {
-              setMode('chat')
-              setPane('editor')
-            }
+            switchMode('chat')
           }}
           aria-label="AI Chat"
         >
@@ -3344,7 +3823,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                   autoComplete="off"
                   spellCheck="false"
                 />
-                <span className="hint">{vault.gemini ? 'Gemini key configured securely · unlocks Gemini 3.5, 3.6 Flash, and 3.1 Pro' : '100% free with no credit card required · unlocks Gemini Flash and Pro'}</span>
+                <span className="hint">{vault.gemini ? 'Gemini key configured securely · unlocks Gemini 3.8 Flash, 3.5 Flash-Lite, and 3.1 Pro' : '100% free with no credit card required · unlocks Gemini Flash and Pro'}</span>
               </div>
             )}
 
@@ -3395,15 +3874,32 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         </div>
       )}
 
+      {searchEverywhere && mode !== 'chat' && (
+        <SearchEverywhere
+          tree={tree}
+          tabs={tabs}
+          onOpen={openFile}
+          onClose={() => setSearchEverywhere(false)}
+          actions={[
+            { name: 'Open Project', run: openFolderPicker },
+            { name: 'Maven Build Console', run: () => setMavenOpen(true) },
+            { name: 'Run Application', run: showRun },
+            { name: 'Browse Server Workspace', run: openFolderPicker },
+            { name: 'New Markdown', run: () => createNewFile() },
+            { name: 'Settings', run: () => setSettingsOpen(true) }
+          ]}
+        />
+      )}
+
       {folderOpen && (
-        <div className="modal-back" onClick={() => setFolderOpen(false)}>
-          <div className="modal vault" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-back" onClick={() => { if (!openingFolder) setFolderOpen(false) }}>
+          <div className="modal vault" role="dialog" aria-modal="true" aria-label="Open project" onClick={(e) => e.stopPropagation()}>
             <div className="sheet-handle" />
             <div className="vault-hero">
               <div className="vault-orb" />
               <div>
-                <h3>Open local folder</h3>
-                <p>Browse the machine and set Aether's workspace. Agent tools follow this folder.</p>
+                <h3>Open project</h3>
+                <p>Enter a folder path to open it as your workspace, or choose a folder from your device.</p>
               </div>
             </div>
             <div className="crumb">
@@ -3412,10 +3908,17 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               )}
               <input
                 className="path-input"
-                value={browse?.path || ''}
-                onChange={(e) => setBrowse((b) => ({ ...(b || { entries: [] }), path: e.target.value }))}
+                autoFocus
+                aria-label="Project folder path"
+                value={folderPath}
+                disabled={openingFolder}
+                onChange={(e) => {
+                  browseRequest.current++
+                  setFolderPath(e.target.value)
+                  setBrowseErr('')
+                }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') loadBrowse(e.target.value)
+                  if (e.key === 'Enter') void selectFolder()
                 }}
                 placeholder="/absolute/folder"
               />
@@ -3429,10 +3932,14 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               ))}
               {browse && !browse.entries.length && <div className="empty"><p>No subfolders</p></div>}
             </div>
-            {browseErr && <div className="bubble err">{browseErr}</div>}
-            <div className="vault-actions">
-              <button className="ghost" onClick={() => setFolderOpen(false)}>Cancel</button>
-              <button className="primary" onClick={selectFolder} disabled={!browse?.path}>Use this folder</button>
+            {browseErr && <div className="bubble err" role="alert">{browseErr}</div>}
+            <div className="vault-actions project-folder-actions">
+              <button className="ghost" onClick={() => { if (!openingFolder) setFolderOpen(false) }}>Cancel</button>
+              <button className="ghost" onClick={openLocalFolder} disabled={openingFolder}>Choose Folder…</button>
+              {isNativeFSSupported() && <button className="ghost" onClick={() => importFiles(folderInputRef)} disabled={openingFolder}>Import Folder…</button>}
+              <button className="primary" onClick={() => void selectFolder()} disabled={!folderPath.trim() || openingFolder}>
+                {openingFolder ? 'Opening…' : 'Use this folder'}
+              </button>
             </div>
           </div>
         </div>
@@ -3823,22 +4330,22 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 <div className="menu-section-label">Studio Mode</div>
                 <div className="mobile-modes-grid">
                   <button
-                    className={`mobile-mode-btn ${mode === 'chat' ? 'on' : ''}`}
-                    onClick={() => { setMode('chat'); setPane('editor'); setMobileMenuOpen(false) }}
+                    className={`mobile-mode-btn ${rightOpen && mode === 'editor' ? 'on' : ''}`}
+                    onClick={() => { switchMode('chat'); setMobileMenuOpen(false) }}
                   >
                     <strong>💬 AI Chat</strong>
                     <span>Gemini / GPT Mode</span>
                   </button>
                   <button
                     className={`mobile-mode-btn ${mode === 'agent' ? 'on' : ''}`}
-                    onClick={() => { setMode('agent'); setPane('editor'); setMobileMenuOpen(false) }}
+                    onClick={() => { switchMode('agent'); setMobileMenuOpen(false) }}
                   >
                     <strong>🤖 AI Agent</strong>
                     <span>Multi-step task coding</span>
                   </button>
                   <button
                     className={`mobile-mode-btn ${mode === 'editor' ? 'on' : ''}`}
-                    onClick={() => { setMode('editor'); setPane('editor'); setMobileMenuOpen(false) }}
+                    onClick={() => { switchMode('editor'); setMobileMenuOpen(false) }}
                   >
                     <strong>📝 Editor</strong>
                     <span>Direct editing &amp; assist</span>
@@ -3942,7 +4449,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                   className="mobile-menu-item"
                   onClick={() => {
                     setMobileMenuOpen(false)
-                    openLocalFolder()
+                    openFolderPicker()
                   }}
                 >
                   <div className="menu-item-icon">📂</div>
@@ -4059,7 +4566,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                   <div className="guide-banner gemini">
                     <span className="banner-ico">🎁</span>
                     <div className="banner-text">
-                      <strong>Zero Cost / 100% Free Tier:</strong> Google AI Studio provides high free rate limits for Gemini 2.0 Flash &amp; Pro without requiring a credit card or billing setup!
+                      <strong>Zero Cost / 100% Free Tier:</strong> Google AI Studio provides high free rate limits for Gemini 3.8 Flash &amp; Pro without requiring a credit card or billing setup!
                     </div>
                   </div>
 
