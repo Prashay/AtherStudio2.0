@@ -4,19 +4,37 @@ Aether is a local AI coding studio with an integrated code editor, workspace fil
 
 ---
 
-## Electron desktop shell
+## 🖥️ Desktop (Electron) & Web Modes
 
-From the repository root in PowerShell:
+You can run Ather Studio as an **Electron desktop application** or as a **web application**:
 
-```powershell
-npm.cmd ci
-npm.cmd exec -- install-electron
-npm.cmd run electron:dev
-```
+- **Desktop (Electron) Mode (Default)**:
+  ```bash
+  npm start
+  ```
+  Starts both backend and frontend servers and automatically opens the Electron desktop window.
+  
+- **Browser / Web-Only Mode**:
+  ```bash
+  npm run dev:web
+  # or
+  node start.js --no-electron
+  ```
 
-The desktop window uses a frameless title bar, IntelliJ-style menus, tool strips, resizable panels, and a status bar. Panel selection and sizes persist locally. Project import, editing, builds, terminal sessions, and AI are shown as placeholders in this desktop shell. Run `npm.cmd run dev` for the existing browser IDE.
+- **Build Desktop Executable & Packages**:
+  ```bash
+  # Packaged desktop application folder (dist_electron/win-unpacked):
+  npm run electron:build
 
-Run `npm.cmd run desktop:typecheck` for strict TypeScript checks and `npm.cmd run desktop:build` for the desktop build.
+  # Standalone portable .ZIP package:
+  npm run electron:build:zip
+
+  # Windows NSIS installer:
+  npm run electron:build:win
+
+  # macOS DMG & ZIP:
+  npm run electron:build:mac
+  ```
 
 ## ⚡ Quick Start
 

@@ -1,6 +1,6 @@
 {
-  "name": "Aether Studio - AI Code Studio",
-  "short_name": "Aether Studio",
+  "name": "Arther Studio - AI Code Studio",
+  "short_name": "Arther Studio",
   "description": "Local & Cloud AI coding studio with mobile full-screen workspace and multi-model assistant",
   "start_url": "./",
   "scope": "./",

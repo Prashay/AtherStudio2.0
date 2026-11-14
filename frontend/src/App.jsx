@@ -1,5 +1,5 @@
 import TreeIcon from './TreeIcon.jsx'
-import { javaOutline } from './javaOutline.js'
+import { fileOutline } from './fileOutline.js'
 import MavenPanel, { MavenLifecycle } from './MavenPanel.jsx'
 import SearchEverywhere from './SearchEverywhere.jsx'
 import CodeEditor from './CodeEditor.jsx'
@@ -1221,16 +1221,39 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (mode !== 'chat' && e.key === 'Shift' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const now = Date.now()
-        if (now - lastShift.current < 400) {
-          setSearchEverywhere(true)
-          lastShift.current = 0
-        } else {
-          lastShift.current = now
+      // 1. Double Shift detection for Search Everywhere
+      if (mode !== 'chat' && e.key === 'Shift') {
+        if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          const now = Date.now()
+          if (now - lastShift.current < 500 && now - lastShift.current > 40) {
+            e.preventDefault()
+            setSearchEverywhere(true)
+            lastShift.current = 0
+            return
+          } else {
+            lastShift.current = now
+          }
         }
-      } else {
+      } else if (e.key !== 'Shift') {
         lastShift.current = 0
+      }
+
+      // 2. Global Search Everywhere shortcuts (Ctrl+Shift+F / Cmd+Shift+F or Ctrl+P / Cmd+P)
+      if ((e.ctrlKey || e.metaKey) && (
+        (e.shiftKey && e.key.toLowerCase() === 'f') ||
+        (!e.shiftKey && e.key.toLowerCase() === 'p')
+      )) {
+        if (mode !== 'chat') {
+          e.preventDefault()
+          setSearchEverywhere(true)
+          return
+        }
+      }
+
+      // 3. In-File Search (Ctrl+F / Cmd+F without Shift)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && !e.shiftKey) {
+        // Prevent default browser find dialog so the editor's find widget activates
+        e.preventDefault()
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault()
@@ -1603,7 +1626,19 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     }
   }
 
-  const openFolderPicker = () => {
+  const openFolderPicker = async () => {
+    if (window.electronAPI?.openFolderDialog) {
+      try {
+        const res = await window.electronAPI.openFolderDialog()
+        if (!res.canceled && res.filePaths?.[0]) {
+          await selectFolder(res.filePaths[0])
+          return
+        }
+        if (res.canceled) return
+      } catch (err) {
+        console.warn('Native open folder dialog failed, falling back to browser modal:', err)
+      }
+    }
     const root = workspace.root && !webDirHandle && !virtualFiles ? workspace.root : ''
     setBrowse(null)
     setFolderPath(root)
@@ -1830,7 +1865,37 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     setMavenOpen(next)
     setTerminalOpen(next)
   }
-  const outline = useMemo(() => javaOutline(current?.path, current?.content), [current])
+  const outline = useMemo(() => fileOutline(current?.path, current?.content), [current])
+  const [editorFolds, setEditorFolds] = useState(new Set())
+  const [structureFilter, setStructureFilter] = useState('')
+
+  useEffect(() => {
+    setEditorFolds(new Set())
+    setStructureFilter('')
+  }, [current?.path])
+
+  const toggleEditorFold = useCallback((startLine) => {
+    setEditorFolds((prev) => {
+      const next = new Set(prev)
+      if (next.has(startLine)) next.delete(startLine)
+      else next.add(startLine)
+      return next
+    })
+  }, [])
+
+  const foldAllMethods = useCallback(() => {
+    const next = new Set()
+    for (const item of outline) {
+      if (item.canFold && item.endLine > item.startLine) {
+        next.add(item.startLine)
+      }
+    }
+    setEditorFolds(next)
+  }, [outline])
+
+  const expandAllMethods = useCallback(() => {
+    setEditorFolds(new Set())
+  }, [])
   const activeMain = launchCatalog.applications.find((item) => item.path === active)
   const breakpointWorkspace = workspace.root || workspace.name || ''
   const projectBreakpoints = javaBreakpoints[breakpointWorkspace] || {}
@@ -1894,8 +1959,17 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
   const canCreateInProject = Boolean(workspace.root && !webDirHandle && !virtualFiles)
   const parentFolder = (file = '') => file.split('/').slice(0, -1).join('/')
   const createProjectItem = async (kind, directory, extension = '', template = () => '') => {
-    const input = window.prompt(`New ${kind} name`)
-    if (input === null) return
+    let input = null
+    if (window.electronAPI?.prompt) {
+      input = await window.electronAPI.prompt({
+        title: `New ${kind}`,
+        message: `Enter name for new ${kind}:`,
+        defaultValue: kind === 'Java Class' ? 'MyClass' : ''
+      })
+    } else {
+      input = window.prompt(`New ${kind} name`)
+    }
+    if (input === null || input === undefined) return
     let name = input.trim()
     if (!name || /[<>:"/\\|?*]/.test(name) || /[. ]$/.test(name) ||
       (kind === 'Java Class' && !/^[A-Za-z_$][\w$]*(?:\.java)?$/.test(name))) {
@@ -1907,20 +1981,27 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     const folder = kind === 'Directory'
     const openedWorkspace = workspaceRef.current
     try {
-      const response = await fetch(folder ? '/api/mkdir' : '/api/file', {
-        method: folder ? 'POST' : 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path, createOnly: true, content: template(name, directory) })
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(response.status === 409 ? 'That name already exists.' : data.error)
+      if (window.electronAPI && (folder ? window.electronAPI.createDirectory : window.electronAPI.createFile)) {
+        const res = folder
+          ? await window.electronAPI.createDirectory(path)
+          : await window.electronAPI.createFile(path, template(name, directory))
+        if (!res.ok) throw new Error(res.error || (res.code === 'EEXIST' ? 'That name already exists.' : 'Could not create item.'))
+      } else {
+        const response = await fetch(folder ? '/api/mkdir' : '/api/file', {
+          method: folder ? 'POST' : 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path, createOnly: true, content: template(name, directory) })
+        })
+        const data = await response.json()
+        if (!response.ok) throw new Error(response.status === 409 ? 'That name already exists.' : data.error)
+      }
       if (workspaceRef.current !== openedWorkspace) return
       await reloadMavenTree()
       if (workspaceRef.current !== openedWorkspace) return
       const parts = directory ? directory.split('/') : []
       setOpenDirs((previous) => new Set([...previous, '', ...parts.map((_, index) => parts.slice(0, index + 1).join('/'))]))
       setImportNotice('')
-      if (!folder) await openFile(data.path)
+      if (!folder) await openFile(path)
     } catch (error) {
       if (workspaceRef.current === openedWorkspace) setImportNotice(error.message || 'Could not create the item.')
     }
@@ -1939,6 +2020,72 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     ['Resource Bundle…', canCreateInProject ? () => createProjectItem('Resource Bundle', directory, '.properties') : null],
     ['Markdown Scratch File', () => createNewFile()]
   ]
+
+  useEffect(() => {
+    if (!window.electronAPI?.onMenuAction) return
+    const cleanup = window.electronAPI.onMenuAction((action) => {
+      if (action === 'new-file') {
+        if (canCreateInProject) createProjectItem('File', '')
+        else createNewFile()
+      } else if (action === 'new-java') {
+        if (canCreateInProject) {
+          createProjectItem('Java Class', '', '.java', (name, folder) => {
+            const pkg = /(?:^|\/)src\/(?:main|test)\/java\/(.+)$/.exec(folder)?.[1]?.replaceAll('/', '.')
+            return (pkg ? `package ${pkg};\n\n` : '') + `public class ${name.slice(0, -5)} {\n}\n`
+          })
+        }
+      } else if (action === 'new-directory') {
+        if (canCreateInProject) createProjectItem('Directory', '')
+      } else if (action === 'open-folder') {
+        openFolderPicker()
+      } else if (action === 'save') {
+        if (current) saveFile()
+      } else if (action === 'search-everywhere') {
+        setSearchEverywhere(true)
+      } else if (action === 'find-file') {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', ctrlKey: true, bubbles: true }))
+      }
+    })
+    return cleanup
+  }, [current, saveFile, canCreateInProject])
+
+  // Multi-platform desktop & web window controls (macOS left traffic lights vs Windows right buttons)
+  const isElectron = Boolean(window.electronAPI?.isElectron)
+  const platform = window.electronAPI?.platform || (typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent) ? 'darwin' : 'win32')
+  const isMac = platform === 'darwin'
+  const isWindows = !isMac
+  const [isMaximized, setIsMaximized] = useState(false)
+
+  useEffect(() => {
+    if (window.electronAPI?.isMaximized) {
+      window.electronAPI.isMaximized().then(setIsMaximized).catch(() => {})
+    }
+    if (window.electronAPI?.onMaximizedChange) {
+      return window.electronAPI.onMaximizedChange(setIsMaximized)
+    }
+  }, [])
+
+  const handleWindowMinimize = () => {
+    window.electronAPI?.minimize?.()
+  }
+
+  const handleWindowMaximize = () => {
+    if (window.electronAPI?.maximize) {
+      window.electronAPI.maximize()
+    } else if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {})
+    } else {
+      document.documentElement.requestFullscreen().catch(() => {})
+    }
+  }
+
+  const handleWindowClose = () => {
+    if (window.electronAPI?.close) {
+      window.electronAPI.close()
+    } else {
+      window.close()
+    }
+  }
   const openProjectMenu = (event, node) => {
     event.preventDefault()
     setMenuOpen(false)
@@ -2118,6 +2265,9 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
 
   const menus = {
     File: [
+      ['New File…', canCreateInProject ? () => createProjectItem('File', '') : () => createNewFile()],
+      ['New Java Class…', canCreateInProject ? () => createProjectItem('Java Class', '', '.java', (name) => `public class ${name.slice(0, -5)} {\n}\n`) : null],
+      ['New Directory…', canCreateInProject ? () => createProjectItem('Directory', '') : null],
       ['Open Project…', openFolderPicker],
       ['Browse Server Workspace…', openFolderPicker],
       ['Save', current ? saveFile : null],
@@ -2180,7 +2330,40 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           </button>)}
         </div>)}
       </div>}
-      <header className="topbar">
+      <header
+        className={`topbar ${isMac ? 'platform-mac' : 'platform-win'} ${isElectron ? 'is-electron' : 'is-web'}`}
+        onDoubleClick={(e) => {
+          if (e.target === e.currentTarget || e.target.classList.contains('topbar')) {
+            handleWindowMaximize()
+          }
+        }}
+      >
+        {/* On macOS in Web mode: render sleek Mac traffic lights on the TOP-LEFT */}
+        {isMac && !isElectron && (
+          <div className="window-controls-mac" aria-label="macOS Window Controls">
+            <button
+              type="button"
+              className="mac-traffic-light mac-close"
+              onClick={handleWindowClose}
+              title="Close"
+              aria-label="Close"
+            />
+            <button
+              type="button"
+              className="mac-traffic-light mac-minimize"
+              onClick={handleWindowMinimize}
+              title="Minimize"
+              aria-label="Minimize"
+            />
+            <button
+              type="button"
+              className="mac-traffic-light mac-maximize"
+              onClick={handleWindowMaximize}
+              title={isMaximized ? "Exit Full Screen" : "Full Screen"}
+              aria-label={isMaximized ? "Exit Full Screen" : "Full Screen"}
+            />
+          </div>
+        )}
         <div className="mark">
           <div className="mark-orb" />
           <div>
@@ -2404,6 +2587,51 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             ☰
           </button>
         </div>
+
+        {/* On Windows: render window controls on the TOP-RIGHT corner */}
+        {isWindows && (
+          <div className="window-controls-win" aria-label="Windows Window Controls">
+            <button
+              type="button"
+              className="win-control-btn win-min"
+              onClick={handleWindowMinimize}
+              title="Minimize"
+              aria-label="Minimize"
+            >
+              <svg width="10" height="1" viewBox="0 0 10 1">
+                <rect width="10" height="1" fill="currentColor" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="win-control-btn win-max"
+              onClick={handleWindowMaximize}
+              title={isMaximized ? "Restore Down" : "Maximize"}
+              aria-label={isMaximized ? "Restore Down" : "Maximize"}
+            >
+              {isMaximized ? (
+                <svg width="10" height="10" viewBox="0 0 10 10">
+                  <path d="M2.5 1h6.5a1 1 0 0 1 1 1v6.5h-1V2H2.5V1z M1 2.5h6.5a1 1 0 0 1 1 1V10H1V2.5zm1 1V9h5V3.5H2z" fill="currentColor" />
+                </svg>
+              ) : (
+                <svg width="10" height="10" viewBox="0 0 10 10">
+                  <path d="M0 0v10h10V0H0zm1 1h8v8H1V1z" fill="currentColor" />
+                </svg>
+              )}
+            </button>
+            <button
+              type="button"
+              className="win-control-btn win-close"
+              onClick={handleWindowClose}
+              title="Close"
+              aria-label="Close"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10">
+                <path d="M0.7 0L5 4.3 9.3 0 10 0.7 5.7 5 10 9.3 9.3 10 5 5.7 0.7 10 0 9.3 4.3 5 0 0.7z" fill="currentColor" />
+              </svg>
+            </button>
+          </div>
+        )}
       </header>
 
       <input
@@ -2522,12 +2750,15 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           </div>
           {search.trim().length >= 2 ? (
             <div className="hits">
-              {hits.map((h, i) => (
-                <div key={`${h.path}:${h.line}:${i}`} className="hit" onClick={() => openFile(h.path)}>
-                  <div className="p">{h.path}:{h.line}</div>
-                  <div className="l">{h.preview}</div>
-                </div>
-              ))}
+              {hits.map((h, i) => {
+                const fileName = h.path ? h.path.split(/[\\/]/).pop() : 'file'
+                return (
+                  <div key={`${h.path}:${h.line}:${i}`} className="hit" onClick={() => openFile(h.path)}>
+                    <div className="p">{fileName}:{h.line}</div>
+                    <div className="l">{h.preview}</div>
+                  </div>
+                )
+              })}
               {!hits.length && <div className="empty"><p>No matches</p></div>}
             </div>
           ) : (
@@ -2557,11 +2788,145 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           )}
           {structureOpen && (
             <section className="structure-tool" aria-label="Structure">
-              <header><strong>Structure</strong><button className="ghost tiny" onClick={toggleStructure} aria-label="Hide Structure">×</button></header>
-              {outline.length ? outline.map((item) => <button type="button" key={item.offset} className={item.kind} onClick={() => {
-                setPane('editor')
-                setEditorJump({ path: active, offset: item.offset })
-              }}><TreeIcon name={item.kind === 'type' ? 'java' : 'method'} />{item.label}</button>) : <p>Open a Java source file to see its declarations.</p>}
+              <header className="structure-header">
+                <div className="structure-title-row">
+                  <span className="structure-title">Structure</span>
+                  {current?.path && (
+                    <span className="structure-format-tag">
+                      {(current.path.match(/\.([^.]+)$/)?.[1] || 'FILE').toUpperCase()}
+                    </span>
+                  )}
+                  <span className="structure-count-pill">{outline.length}</span>
+                </div>
+                <div className="structure-header-actions">
+                  {outline.some((i) => i.canFold) && (
+                    <>
+                      <button
+                        type="button"
+                        className="ghost tiny structure-action-btn"
+                        onClick={foldAllMethods}
+                        title="Collapse all methods & blocks in file"
+                        aria-label="Collapse all methods"
+                      >
+                        [-]
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost tiny structure-action-btn"
+                        onClick={expandAllMethods}
+                        title="Expand all methods & blocks in file"
+                        aria-label="Expand all methods"
+                      >
+                        [+]
+                      </button>
+                    </>
+                  )}
+                  <button className="ghost tiny" onClick={toggleStructure} aria-label="Hide Structure">×</button>
+                </div>
+              </header>
+
+              {outline.length > 3 && (
+                <div className="structure-filter-bar">
+                  <span className="structure-search-icon">🔍</span>
+                  <input
+                    type="text"
+                    className="structure-filter-input"
+                    placeholder="Filter methods & symbols..."
+                    value={structureFilter}
+                    onChange={(e) => setStructureFilter(e.target.value)}
+                    spellCheck="false"
+                  />
+                  {structureFilter && (
+                    <button
+                      type="button"
+                      className="structure-filter-clear"
+                      onClick={() => setStructureFilter('')}
+                      aria-label="Clear filter"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="structure-items-list">
+                {outline.length ? (
+                  outline
+                    .filter((item) => {
+                      if (!structureFilter.trim()) return true
+                      const q = structureFilter.toLowerCase()
+                      return (
+                        (item.name && item.name.toLowerCase().includes(q)) ||
+                        (item.label && item.label.toLowerCase().includes(q)) ||
+                        (item.detail && item.detail.toLowerCase().includes(q)) ||
+                        (item.subKind && item.subKind.toLowerCase().includes(q))
+                      )
+                    })
+                    .map((item, index) => {
+                      const isFolded = editorFolds.has(item.startLine)
+                      return (
+                        <div
+                          key={`${item.offset}-${index}`}
+                          className={`structure-row ${item.kind} ${item.subKind || ''}`}
+                          onClick={() => {
+                            setPane('editor')
+                            setEditorJump({ path: active, offset: item.offset })
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          title={`${item.label} (Line ${item.line})`}
+                        >
+                          {/* Symbol Kind Badge with Color Combination */}
+                          <span
+                            className="structure-badge"
+                            style={{
+                              color: item.color || '#38bdf8',
+                              borderColor: `${item.color || '#38bdf8'}55`,
+                              backgroundColor: `${item.color || '#38bdf8'}18`
+                            }}
+                          >
+                            {item.badge || (item.kind === 'type' ? 'C' : 'M')}
+                          </span>
+
+                          {/* Symbol Name & Detail with Syntax Colors */}
+                          <div className="structure-content">
+                            <span className="structure-symbol-name" style={{ color: item.color || 'var(--paper)' }}>
+                              {item.name || item.label}
+                            </span>
+                            {item.detail && (
+                              <span className="structure-symbol-detail">
+                                {item.detail}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Method-Level Minimization Button */}
+                          {item.canFold && (
+                            <button
+                              type="button"
+                              className={`structure-item-fold-btn ${isFolded ? 'is-folded' : 'is-expanded'}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                toggleEditorFold(item.startLine)
+                              }}
+                              title={isFolded ? `Expand ${item.name} in file` : `Minimize ${item.name} in file`}
+                              aria-label={isFolded ? `Expand ${item.name}` : `Minimize ${item.name}`}
+                            >
+                              {isFolded ? '▸' : '▾'}
+                            </button>
+                          )}
+
+                          {/* Line Number Chip */}
+                          <span className="structure-line-chip" aria-hidden="true">
+                            L{item.line}
+                          </span>
+                        </div>
+                      )
+                    })
+                ) : (
+                  <p className="structure-empty">Open a source or config file to see its structure.</p>
+                )}
+              </div>
             </section>
           )}
           {leftOpen && (
@@ -3111,6 +3476,9 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         fontSize={settings.editorFontSize || 13}
                         wordWrap={settings.editorWordWrap}
                         onChange={updateContent}
+                        outline={outline}
+                        externalFoldedLines={editorFolds}
+                        onExternalToggleFold={toggleEditorFold}
                       />
                       <div className="editor-split-divider" />
                       <div className="editor-md-reader editor-split-right">
@@ -3121,10 +3489,10 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     <CodeEditor
                       breakpointLines={projectBreakpoints[current.path]}
                       onToggleBreakpoint={toggleBreakpoint}
-                        jump={editorJump}
-                        mainLine={activeMain ? outline.find((item) => item.runnable)?.line : undefined}
-                        onRunMain={activeMain ? () => executeApplication(false, activeMain) : undefined}
-                        onDebugMain={activeMain ? () => executeApplication(true, activeMain) : undefined}
+                      jump={editorJump}
+                      mainLine={activeMain ? outline.find((item) => item.runnable)?.line : undefined}
+                      onRunMain={activeMain ? () => executeApplication(false, activeMain) : undefined}
+                      onDebugMain={activeMain ? () => executeApplication(true, activeMain) : undefined}
                       key={current.path}
                       workspace={!webDirHandle && !virtualFiles ? workspace.root : null}
                       path={current.path}
@@ -3132,6 +3500,9 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       fontSize={settings.editorFontSize || 13}
                       wordWrap={settings.editorWordWrap}
                       onChange={updateContent}
+                      outline={outline}
+                      externalFoldedLines={editorFolds}
+                      onExternalToggleFold={toggleEditorFold}
                     />
                   )}
                   <div className="editor-bar">

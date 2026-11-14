@@ -271,7 +271,24 @@ export default function MavenPanel({ project, tree, visible, onHide, application
     }, 30000) : null
     setRunning(true)
     setStatus(debug ? 'Starting debugger…' : 'Running ' + goalToRun)
-    const append = (text) => setOutput((previous) => (previous + text).slice(-160000))
+    let pendingOutput = ''
+    let flushTimer = null
+    const flushOutput = () => {
+      if (pendingOutput) {
+        const chunk = pendingOutput
+        pendingOutput = ''
+        setOutput((previous) => (previous + chunk).slice(-160000))
+      }
+    }
+    const append = (text) => {
+      pendingOutput += text
+      if (!flushTimer) {
+        flushTimer = setTimeout(() => {
+          flushTimer = null
+          flushOutput()
+        }, 40)
+      }
+    }
     try {
       const response = await fetch(applicationRun ? '/api/java/run' : '/api/maven/run', {
         method: 'POST',
@@ -312,12 +329,18 @@ export default function MavenPanel({ project, tree, visible, onHide, application
           }
         }
       }
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      flushOutput()
       if (!finished) throw new Error('The process connection ended before reporting an exit code.')
     } catch (error) {
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      flushOutput()
       setStatus(startupTimedOut ? 'Debugger connection timed out' : controller.signal.aborted ? 'Stopped' : 'Failed')
       if (startupTimedOut) append('The backend did not report a debugger connection. Restart Aether and try Debug again.\n')
       else if (!controller.signal.aborted) append(error.message + '\n')
     } finally {
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      flushOutput()
       clearTimeout(startupTimer)
       request.current = null
       setRunning(false)

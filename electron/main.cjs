@@ -1,7 +1,15 @@
-const { app, BrowserWindow, shell, ipcMain, Menu } = require('electron')
+const { app, BrowserWindow, shell, ipcMain, Menu, nativeImage, dialog } = require('electron')
 const path = require('path')
 const http = require('http')
+const net = require('net')
 const fs = require('fs')
+const os = require('os')
+
+// Prevent black screen & occlusion compositing bugs on macOS Apple Silicon (M1/M2/M3)
+if (process.platform === 'darwin') {
+  app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
+  app.commandLine.appendSwitch('force-color-profile', 'srgb')
+}
 
 const frontendPort = Number(process.env.AETHER_FRONTEND_PORT || 4576)
 const backendPort = Number(process.env.AETHER_BACKEND_PORT || 3090)
@@ -12,6 +20,13 @@ const PROD_URL = `http://127.0.0.1:${backendPort}`
 let mainWindow = null
 let splashWindow = null
 let backendLoaded = false
+let currentWorkspaceRoot = process.env.AETHER_ROOT || (isDev ? path.resolve(__dirname, '..') : process.cwd())
+
+function resolveWorkspacePath(targetPath) {
+  if (!targetPath) return currentWorkspaceRoot
+  if (path.isAbsolute(targetPath)) return targetPath
+  return path.resolve(currentWorkspaceRoot || process.cwd(), targetPath)
+}
 
 // Single instance lock
 const gotTheLock = app.requestSingleInstanceLock()
@@ -27,18 +42,52 @@ app.on('second-instance', () => {
 })
 
 function getAppIcon() {
-  const candidates = [
-    path.join(__dirname, 'icon.ico'),
-    path.join(__dirname, 'icon.png'),
-    path.join(__dirname, '..', 'build', 'icon.ico'),
-    path.join(__dirname, '..', 'build', 'icon.png'),
-    path.join(__dirname, '..', 'frontend', 'public', 'icon.png'),
-    path.join(__dirname, '..', 'frontend', 'public', 'favicon.svg')
-  ]
+  const isMac = process.platform === 'darwin'
+  const candidates = isMac
+    ? [
+        path.join(__dirname, 'icon.png'),
+        path.join(__dirname, '..', 'build', 'icon.png'),
+        path.join(__dirname, '..', 'frontend', 'public', 'icon.png'),
+        path.join(__dirname, 'icon.ico'),
+        path.join(__dirname, '..', 'build', 'icon.ico')
+      ]
+    : [
+        path.join(__dirname, 'icon.ico'),
+        path.join(__dirname, 'icon.png'),
+        path.join(__dirname, '..', 'build', 'icon.ico'),
+        path.join(__dirname, '..', 'build', 'icon.png'),
+        path.join(__dirname, '..', 'frontend', 'public', 'icon.png'),
+        path.join(__dirname, '..', 'frontend', 'public', 'favicon.svg')
+      ]
   for (const p of candidates) {
     if (fs.existsSync(p)) return p
   }
   return undefined
+}
+
+function setMacDockIcon() {
+  if (process.platform === 'darwin' && app.dock) {
+    const candidates = [
+      path.join(__dirname, 'icon.png'),
+      path.join(__dirname, '..', 'build', 'icon.png'),
+      path.join(__dirname, '..', 'frontend', 'public', 'icon.png'),
+      path.join(__dirname, 'icon.icns'),
+      path.join(__dirname, '..', 'build', 'icon.icns')
+    ]
+    for (const p of candidates) {
+      if (fs.existsSync(p)) {
+        try {
+          const image = nativeImage.createFromPath(p)
+          if (!image.isEmpty()) {
+            app.dock.setIcon(image)
+            break
+          }
+        } catch (err) {
+          console.error('[macOS] Failed to set dock icon:', err)
+        }
+      }
+    }
+  }
 }
 
 function getBackendServerPath() {
@@ -55,33 +104,32 @@ function getBackendServerPath() {
   return path.join(__dirname, '..', 'backend', 'server.js')
 }
 
-// Helper: check if a local HTTP endpoint is responsive
-function checkPortAlive(port, reqPath, callback) {
-  const req = http.request(
-    { host: '127.0.0.1', port, method: 'GET', path: reqPath || '/', timeout: 1200 },
-    (res) => {
-      callback(true)
-    }
-  )
-  req.on('error', () => callback(false))
-  req.on('timeout', () => {
-    req.destroy()
-    callback(false)
-  })
-  req.end()
-}
-
-function waitForPortAlive(port, reqPath, timeoutMs = 8000) {
-  const start = Date.now()
+// Ultra-fast TCP port check (connects or fails in 1-2ms, eliminates 10-18s delay on Mac)
+function checkPortOpen(port, timeoutMs = 250) {
   return new Promise((resolve) => {
-    function ping() {
-      checkPortAlive(port, reqPath, (alive) => {
-        if (alive) return resolve(true)
-        if (Date.now() - start > timeoutMs) return resolve(false)
-        setTimeout(ping, 250)
-      })
-    }
-    ping()
+    const socket = new net.Socket()
+    let resolved = false
+    socket.setTimeout(timeoutMs)
+    socket.once('connect', () => {
+      resolved = true
+      socket.destroy()
+      resolve(true)
+    })
+    socket.once('timeout', () => {
+      if (!resolved) {
+        resolved = true
+        socket.destroy()
+        resolve(false)
+      }
+    })
+    socket.once('error', () => {
+      if (!resolved) {
+        resolved = true
+        socket.destroy()
+        resolve(false)
+      }
+    })
+    socket.connect(port, '127.0.0.1')
   })
 }
 
@@ -90,7 +138,7 @@ async function ensureBackend() {
   if (backendLoaded) return true
 
   // 1. Check if backend is already alive (e.g. started by start.js)
-  const alreadyRunning = await waitForPortAlive(backendPort, '/api/models', 600)
+  const alreadyRunning = await checkPortOpen(backendPort, 150)
   if (alreadyRunning) {
     console.log(`[Electron] Backend server already running on port ${backendPort}.`)
     backendLoaded = true
@@ -105,14 +153,12 @@ async function ensureBackend() {
     require(serverPath)
     backendLoaded = true
 
-    const isUp = await waitForPortAlive(backendPort, '/api/models', 10000)
+    const isUp = await checkPortOpen(backendPort, 1200)
     if (isUp) {
       console.log(`[Electron] Embedded backend active on port ${backendPort}.`)
       return true
-    } else {
-      console.warn(`[Electron] Warning: Embedded backend started but port ${backendPort} did not respond in time.`)
-      return false
     }
+    return false
   } catch (err) {
     console.error('[Electron] Error starting embedded backend server:', err)
     return false
@@ -121,6 +167,7 @@ async function ensureBackend() {
 
 function createSplashWindow() {
   const appIcon = getAppIcon()
+  const winIcon = appIcon ? nativeImage.createFromPath(appIcon) : undefined
   splashWindow = new BrowserWindow({
     width: 420,
     height: 310,
@@ -132,7 +179,7 @@ function createSplashWindow() {
     alwaysOnTop: true,
     skipTaskbar: true,
     backgroundColor: '#00000000',
-    icon: appIcon,
+    icon: winIcon || appIcon,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false
@@ -290,71 +337,84 @@ function createSplashWindow() {
   splashWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(splashHtml))
 }
 
+function getFrontendDistPath() {
+  const candidates = [
+    path.join(__dirname, '..', 'frontend', 'dist', 'index.html'),
+    path.join(app.getAppPath(), 'frontend', 'dist', 'index.html'),
+    process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked', 'frontend', 'dist', 'index.html') : null,
+    process.resourcesPath ? path.join(process.resourcesPath, 'app.asar', 'frontend', 'dist', 'index.html') : null,
+    process.resourcesPath ? path.join(process.resourcesPath, 'frontend', 'dist', 'index.html') : null,
+    path.join(process.cwd(), 'frontend', 'dist', 'index.html')
+  ].filter(Boolean)
+
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p
+  }
+  return null
+}
+
 async function loadAppUrl(window) {
-  // 1. Check if Vite dev server is running (e.g. from `npm start` or `npm run dev`)
-  const isViteUp = await waitForPortAlive(frontendPort, '/', 800)
+  if (!window || window.isDestroyed()) return
+
+  // 1. Fast check for Vite dev server (quick 180ms TCP check for development)
+  const isViteUp = await checkPortOpen(frontendPort, 180)
   if (isViteUp) {
     console.log(`[Electron] Connecting to frontend dev server at ${DEV_URL}`)
-    await window.loadURL(DEV_URL).catch((err) => console.error('[Electron] Failed to load DEV_URL:', err))
-    if (isDev || process.env.AETHER_DEVTOOLS === 'true') {
-      window.webContents.openDevTools({ mode: 'detach' })
+    try {
+      await window.loadURL(DEV_URL)
+      if (isDev || process.env.AETHER_DEVTOOLS === 'true') {
+        window.webContents.openDevTools({ mode: 'detach' })
+      }
+      return
+    } catch (err) {
+      console.warn('[Electron] Failed to connect to DEV_URL, falling back to local file:', err.message)
     }
-    return
   }
 
-  // 2. Production mode: check backend port (which serves frontend/dist statically)
-  const isBackendUp = await waitForPortAlive(backendPort, '/api/models', 8000)
+  // 2. Production / Standalone mode: load local frontend bundle directly (0ms network delay, never black screen!)
+  const distHtml = getFrontendDistPath()
+  if (distHtml) {
+    console.log(`[Electron] Loading production frontend directly from disk: ${distHtml}`)
+    try {
+      await window.loadFile(distHtml)
+      return
+    } catch (err) {
+      console.warn('[Electron] Local file load failed, attempting backend URL:', err.message)
+    }
+  }
+
+  // 3. Fallback: load through backend server if available
+  const isBackendUp = await checkPortOpen(backendPort, 1200)
   if (isBackendUp) {
-    console.log(`[Electron] Loading application through local backend at ${PROD_URL}`)
-    await window.loadURL(PROD_URL).catch((err) => console.error('[Electron] Failed to load PROD_URL:', err))
+    console.log(`[Electron] Loading via backend server at ${PROD_URL}`)
+    await window.loadURL(PROD_URL).catch(() => {})
     return
   }
 
-  // 3. Fallback retry loop
-  console.log('[Electron] Waiting for application servers to respond...')
-  let attempts = 0
-  const interval = setInterval(async () => {
-    attempts++
-    const devReady = await waitForPortAlive(frontendPort, '/', 400)
-    if (devReady) {
-      clearInterval(interval)
-      console.log(`[Electron] Dev server connected at ${DEV_URL}`)
-      return window.loadURL(DEV_URL).catch(() => {})
-    }
-
-    const backendReady = await waitForPortAlive(backendPort, '/api/models', 400)
-    if (backendReady) {
-      clearInterval(interval)
-      console.log(`[Electron] Backend server connected at ${PROD_URL}`)
-      return window.loadURL(PROD_URL).catch(() => {})
-    }
-
-    if (attempts >= 15) {
-      clearInterval(interval)
-      const errorHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Ather Studio - Connecting...</title>
-          <style>
-            body { background: #0c1016; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; text-align: center; }
-            h2 { color: #38bdf8; margin-bottom: 12px; }
-            p { color: #94a3b8; max-width: 500px; line-height: 1.6; margin-bottom: 24px; }
-            .btn { background: #0284c7; color: white; border: none; padding: 10px 24px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
-            .btn:hover { background: #0369a1; }
-          </style>
-        </head>
-        <body>
-          <h2>Connecting to Ather Studio...</h2>
-          <p>The workspace server on port ${backendPort} is taking longer than expected to respond.<br/>If starting in development, run <code>npm start</code> in your terminal.</p>
-          <button class="btn" onclick="location.reload()">Retry Connection</button>
-        </body>
-        </html>
-      `
-      window.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(errorHtml)).catch(() => {})
-    }
-  }, 1000)
+  // 4. Graceful error card (never leave user on a black blank screen!)
+  const distFallback = distHtml ? `file://${distHtml}` : `${PROD_URL}`
+  const errorHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Arther Studio</title>
+      <style>
+        body { background: #0c1016; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }
+        h2 { color: #38bdf8; margin-bottom: 8px; }
+        p { color: #94a3b8; max-width: 460px; line-height: 1.5; font-size: 13px; margin-bottom: 20px; }
+        button { background: #0284c7; color: white; border: none; padding: 9px 22px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+        button:hover { background: #0369a1; }
+      </style>
+    </head>
+    <body>
+      <h2>Starting Arther Studio...</h2>
+      <p>The application workspace is initializing. Click below to refresh.</p>
+      <button onclick="location.href='${distFallback}'">Reload Workspace</button>
+    </body>
+    </html>
+  `
+  window.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(errorHtml)).catch(() => {})
 }
 
 function setupApplicationMenu() {
@@ -379,6 +439,33 @@ function setupApplicationMenu() {
     {
       label: 'File',
       submenu: [
+        {
+          label: 'New File…',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => mainWindow?.webContents.send('menu-action', 'new-file')
+        },
+        {
+          label: 'New Java Class…',
+          accelerator: 'CmdOrCtrl+Shift+J',
+          click: () => mainWindow?.webContents.send('menu-action', 'new-java')
+        },
+        {
+          label: 'New Directory…',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: () => mainWindow?.webContents.send('menu-action', 'new-directory')
+        },
+        { type: 'separator' },
+        {
+          label: 'Open Project / Folder…',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => mainWindow?.webContents.send('menu-action', 'open-folder')
+        },
+        {
+          label: 'Save',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => mainWindow?.webContents.send('menu-action', 'save')
+        },
+        { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' }
       ]
     },
@@ -391,7 +478,18 @@ function setupApplicationMenu() {
         { role: 'cut' },
         { role: 'copy' },
         { role: 'paste' },
-        { role: 'selectAll' }
+        { role: 'selectAll' },
+        { type: 'separator' },
+        {
+          label: 'Find in File…',
+          accelerator: 'CmdOrCtrl+F',
+          click: () => mainWindow?.webContents.send('menu-action', 'find-file')
+        },
+        {
+          label: 'Search Everywhere…',
+          accelerator: 'CmdOrCtrl+Shift+F',
+          click: () => mainWindow?.webContents.send('menu-action', 'search-everywhere')
+        }
       ]
     },
     {
@@ -439,7 +537,7 @@ function createWindow() {
     icon: appIcon,
     backgroundColor: '#0c1016',
     show: false, // Initially hidden while splash screen is active
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
     trafficLightPosition: { x: 16, y: 16 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -482,13 +580,34 @@ function createWindow() {
 
   // Smoothly transition from splash to main window
   mainWindow.once('ready-to-show', () => {
-    setTimeout(revealMainWindow, 400)
+    revealMainWindow()
   })
 
-  // Fallback safety timeout
-  setTimeout(revealMainWindow, 7000)
+  mainWindow.webContents.once('dom-ready', () => {
+    revealMainWindow()
+  })
+
+  // Fallback safety timeout (reduced from 7000ms to 1800ms)
+  setTimeout(revealMainWindow, 1800)
+
+  // Auto-recovery if initial URL load encounters any network delay or error
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.warn(`[Electron] URL load error (${errorCode}): ${errorDescription} on ${validatedURL}`)
+    const distHtml = getFrontendDistPath()
+    if (distHtml && !validatedURL.startsWith('file://')) {
+      console.log('[Electron] Immediately recovering by loading local bundle from disk:', distHtml)
+      mainWindow.loadFile(distHtml).catch(() => {})
+    }
+  })
 
   loadAppUrl(mainWindow)
+
+  mainWindow.on('maximize', () => {
+    mainWindow?.webContents?.send('window-maximized-change', true)
+  })
+  mainWindow.on('unmaximize', () => {
+    mainWindow?.webContents?.send('window-maximized-change', false)
+  })
 
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -496,12 +615,18 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  setMacDockIcon()
   setupApplicationMenu()
   createSplashWindow()
-  await ensureBackend()
+  
+  // Non-blocking background backend initialization (never delays window creation)
+  ensureBackend().catch((err) => console.error('[Electron] Background backend error:', err))
+
   createWindow()
+  setMacDockIcon()
 
   app.on('activate', () => {
+    setMacDockIcon()
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow()
     }
@@ -523,9 +648,301 @@ ipcMain.handle('window-maximize', () => {
   mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()
 })
 ipcMain.handle('window-close', () => mainWindow?.close())
+ipcMain.handle('window-fullscreen', () => {
+  if (!mainWindow) return
+  mainWindow.setFullScreen(!mainWindow.isFullScreen())
+})
 ipcMain.handle('window-is-maximized', () => mainWindow?.isMaximized() || false)
 ipcMain.handle('open-external', (_event, url) => {
   if (url && (url.startsWith('http:') || url.startsWith('https:'))) {
     shell.openExternal(url)
   }
+})
+
+// Desktop Native File & Directory Operations
+ipcMain.handle('fs-create-file', async (_event, { path: filePath, content = '', overwrite = false }) => {
+  try {
+    if (!filePath) return { ok: false, error: 'File path is required.' }
+    const target = resolveWorkspacePath(filePath)
+    const parentDir = path.dirname(target)
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true })
+    }
+    if (!overwrite && fs.existsSync(target)) {
+      return { ok: false, error: 'That file already exists.', code: 'EEXIST' }
+    }
+    fs.writeFileSync(target, content, 'utf8')
+    const rel = currentWorkspaceRoot ? path.relative(currentWorkspaceRoot, target).replace(/\\/g, '/') : target
+    return { ok: true, path: rel, absPath: target }
+  } catch (err) {
+    console.error('[Electron] fs-create-file error:', err)
+    return { ok: false, error: err.message }
+  }
+})
+
+ipcMain.handle('fs-create-directory', async (_event, { path: dirPath }) => {
+  try {
+    if (!dirPath) return { ok: false, error: 'Directory path is required.' }
+    const target = resolveWorkspacePath(dirPath)
+    if (fs.existsSync(target)) {
+      return { ok: false, error: 'That directory already exists.', code: 'EEXIST' }
+    }
+    fs.mkdirSync(target, { recursive: true })
+    const rel = currentWorkspaceRoot ? path.relative(currentWorkspaceRoot, target).replace(/\\/g, '/') : target
+    return { ok: true, path: rel, absPath: target }
+  } catch (err) {
+    console.error('[Electron] fs-create-directory error:', err)
+    return { ok: false, error: err.message }
+  }
+})
+
+ipcMain.handle('fs-read-file', async (_event, { path: filePath }) => {
+  try {
+    const target = resolveWorkspacePath(filePath)
+    const content = fs.readFileSync(target, 'utf8')
+    return { ok: true, content, path: target }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+})
+
+ipcMain.handle('fs-write-file', async (_event, { path: filePath, content }) => {
+  try {
+    const target = resolveWorkspacePath(filePath)
+    const parentDir = path.dirname(target)
+    if (!fs.existsSync(parentDir)) fs.mkdirSync(parentDir, { recursive: true })
+    fs.writeFileSync(target, content, 'utf8')
+    return { ok: true, path: target }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+})
+
+ipcMain.handle('fs-delete-item', async (_event, { path: itemPath }) => {
+  try {
+    const target = resolveWorkspacePath(itemPath)
+    if (!fs.existsSync(target)) return { ok: true }
+    const stat = fs.statSync(target)
+    if (stat.isDirectory()) {
+      fs.rmSync(target, { recursive: true, force: true })
+    } else {
+      fs.unlinkSync(target)
+    }
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+})
+
+ipcMain.handle('fs-get-workspace-root', () => currentWorkspaceRoot)
+
+ipcMain.handle('fs-set-workspace-root', (_event, newRoot) => {
+  if (newRoot && fs.existsSync(newRoot)) {
+    currentWorkspaceRoot = newRoot
+    process.env.AETHER_ROOT = newRoot
+    return { ok: true, root: currentWorkspaceRoot }
+  }
+  return { ok: false, error: 'Directory does not exist' }
+})
+
+// Native Dialogs
+ipcMain.handle('dialog-show-open-folder', async (_event, { defaultPath } = {}) => {
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+  const res = await dialog.showOpenDialog(parent, {
+    title: 'Open Project Folder',
+    defaultPath: defaultPath || currentWorkspaceRoot || os.homedir(),
+    properties: ['openDirectory', 'createDirectory']
+  })
+  if (!res.canceled && res.filePaths.length > 0) {
+    currentWorkspaceRoot = res.filePaths[0]
+    process.env.AETHER_ROOT = currentWorkspaceRoot
+  }
+  return res
+})
+
+ipcMain.handle('dialog-show-open-file', async (_event, options = {}) => {
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+  return await dialog.showOpenDialog(parent, {
+    defaultPath: options.defaultPath || currentWorkspaceRoot || os.homedir(),
+    properties: ['openFile'],
+    filters: options.filters
+  })
+})
+
+ipcMain.handle('dialog-show-save-file', async (_event, options = {}) => {
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+  return await dialog.showSaveDialog(parent, {
+    defaultPath: options.defaultPath || currentWorkspaceRoot || os.homedir(),
+    filters: options.filters
+  })
+})
+
+// Apple-style sleek modal input prompt for Electron
+function showPromptDialog({ message = 'Enter name:', title = 'New Item', defaultValue = '' } = {}) {
+  return new Promise((resolve) => {
+    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+    const promptWin = new BrowserWindow({
+      width: 440,
+      height: 215,
+      parent: parent,
+      modal: Boolean(parent),
+      show: false,
+      frame: false,
+      resizable: false,
+      alwaysOnTop: true,
+      center: true,
+      backgroundColor: '#121620',
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true
+      }
+    })
+
+    let resolved = false
+    function finish(value) {
+      if (resolved) return
+      resolved = true
+      resolve(value)
+      if (!promptWin.isDestroyed()) {
+        promptWin.close()
+      }
+    }
+
+    promptWin.on('closed', () => {
+      finish(null)
+    })
+
+    promptWin.webContents.on('will-navigate', (event, url) => {
+      event.preventDefault()
+      try {
+        const u = new URL(url)
+        if (u.protocol === 'prompt-action:') {
+          const res = u.searchParams.get('value')
+          finish(res === '__CANCELLED__' ? null : decodeURIComponent(res || ''))
+        }
+      } catch {}
+    })
+
+    const safeTitle = String(title || 'New Item').replace(/"/g, '&quot;')
+    const safeMsg = String(message || 'Enter name:').replace(/"/g, '&quot;')
+    const safeDef = JSON.stringify(String(defaultValue || ''))
+
+    const promptHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #141824;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 12px;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-app-region: drag;
+    }
+    .title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+    .message {
+      font-size: 14px;
+      font-weight: 500;
+      color: #e2e8f0;
+      margin-bottom: 14px;
+    }
+    input {
+      width: 100%;
+      background: #090c12;
+      border: 1px solid #334155;
+      color: #ffffff;
+      padding: 9px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      outline: none;
+      margin-bottom: 16px;
+      -webkit-app-region: no-drag;
+    }
+    input:focus {
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+    }
+    .actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: auto;
+      -webkit-app-region: no-drag;
+    }
+    button {
+      padding: 7px 18px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+    }
+    .cancel {
+      background: rgba(255, 255, 255, 0.08);
+      color: #94a3b8;
+    }
+    .cancel:hover {
+      background: rgba(255, 255, 255, 0.14);
+      color: #f1f5f9;
+    }
+    .confirm {
+      background: #0284c7;
+      color: #ffffff;
+    }
+    .confirm:hover {
+      background: #0369a1;
+    }
+  </style>
+</head>
+<body>
+  <div class="title">${safeTitle}</div>
+  <div class="message">${safeMsg}</div>
+  <input id="prompt-input" type="text" autofocus autocomplete="off" spellcheck="false" />
+  <div class="actions">
+    <button class="cancel" id="btn-cancel" type="button">Cancel</button>
+    <button class="confirm" id="btn-ok" type="button">OK</button>
+  </div>
+  <script>
+    const input = document.getElementById('prompt-input');
+    input.value = ${safeDef};
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 50);
+    function submitVal(val) {
+      window.location.href = 'prompt-action://dialog?value=' + encodeURIComponent(val === null ? '__CANCELLED__' : val);
+    }
+    document.getElementById('btn-ok').onclick = () => submitVal(input.value);
+    document.getElementById('btn-cancel').onclick = () => submitVal(null);
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') submitVal(input.value);
+      if (e.key === 'Escape') submitVal(null);
+    };
+  </script>
+</body>
+</html>`
+
+    promptWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(promptHtml))
+    promptWin.once('ready-to-show', () => promptWin.show())
+  })
+}
+
+ipcMain.handle('show-prompt', async (_event, options) => {
+  return await showPromptDialog(options)
 })

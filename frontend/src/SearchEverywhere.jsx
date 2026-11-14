@@ -5,13 +5,18 @@ export default function SearchEverywhere({ tree, tabs, actions, onOpen, onClose 
   const [selected, setSelected] = useState(0)
   const list = useRef(null)
   const files = useMemo(() => {
-    const paths = new Map(tabs.map(({ path }) => [path, path.split('/').at(-1)]))
+    const paths = new Map(tabs.map(({ path }) => [path, path.split(/[\\/]/).pop()]))
     const visit = (node) => {
-      if (node.type === 'file') paths.set(node.path, node.name)
+      if (node.type === 'file') paths.set(node.path, (node.name || node.path).split(/[\\/]/).pop())
       else node.children?.forEach(visit)
     }
     if (tree) visit(tree)
-    return Array.from(paths, ([path, name]) => ({ name, path, run: () => onOpen(path) }))
+    return Array.from(paths, ([path, name]) => ({
+      name: name || path.split(/[\\/]/).pop(),
+      path,
+      folder: path.split(/[\\/]/).slice(0, -1).pop() || '',
+      run: () => onOpen(path)
+    }))
   }, [tree, tabs, onOpen])
 
   const needle = query.trim().toLowerCase()
@@ -53,7 +58,7 @@ export default function SearchEverywhere({ tree, tabs, actions, onOpen, onClose 
             <li key={item.path || item.name}>
               <button className={index === selected ? 'on' : ''} onClick={() => run(item)}>
                 <span>{item.name}</span>
-                <small>{item.path || 'Action'}</small>
+                <small>{item.folder ? `${item.folder}/` : item.path ? 'file' : 'Action'}</small>
               </button>
             </li>
           ))}

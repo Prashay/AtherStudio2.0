@@ -17,6 +17,8 @@
     "electron:build:zip": "npm run build && electron-builder --win zip",
     "electron:build:win": "npm run build && electron-builder --win",
     "electron:build:mac": "npm run build && electron-builder --mac",
+    "electron:build:mac:arm64": "npm run build && electron-builder --mac --arm64",
+    "electron:build:mac:universal": "npm run build && electron-builder --mac --universal",
     "electron:build:all": "npm run build && electron-builder --win --mac",
     "desktop:build": "npm run desktop:typecheck && electron-vite build",
     "desktop:typecheck": "tsc -p tsconfig.desktop.json"
@@ -80,7 +82,7 @@
         }
       ],
       "category": "public.app-category.developer-tools",
-      "icon": "build/icon.png"
+      "icon": "build/icon.icns"
     },
     "extraMetadata": {
       "main": "electron/main.cjs"

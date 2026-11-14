@@ -21,7 +21,8 @@ function root() {
 
 const SKIP_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', '.next', '.cache',
-  '__pycache__', '.venv', 'venv', '.turbo', '.idea', '.vscode'
+  '__pycache__', '.venv', 'venv', '.turbo', '.idea', '.vscode',
+  'target', 'out', '.mvn', '.gradle', '.settings', 'bin'
 ])
 
 const TEXT_EXT = new Set([
@@ -56,7 +57,7 @@ function safeJoin(rel) {
 
 function toRel(abs) {
   const base = root()
-  if (!base) return abs
+  if (!base) return path.basename(abs)
   const rel = path.relative(base, abs)
   return rel.split(path.sep).join('/')
 }
@@ -442,16 +443,16 @@ app.put('/api/file', (req, res) => {
     if (typeof content !== 'string') {
       return res.status(400).json({ error: 'content must be a string' })
     }
+    const targetDir = path.dirname(abs)
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true })
+    }
     if (req.body.createOnly === true) {
-      const base = fs.realpathSync(root())
-      const parent = fs.realpathSync(path.dirname(abs))
-      const relative = path.relative(base, parent)
-      if (path.isAbsolute(relative) || relative.split(path.sep)[0] === '..') {
-        return res.status(400).json({ error: 'Destination is outside the project.' })
+      if (fs.existsSync(abs)) {
+        return res.status(409).json({ error: 'That file already exists.' })
       }
-      fs.writeFileSync(path.join(parent, path.basename(abs)), content, { encoding: 'utf8', flag: 'wx' })
+      fs.writeFileSync(abs, content, { encoding: 'utf8', flag: 'wx' })
     } else {
-      fs.mkdirSync(path.dirname(abs), { recursive: true })
       fs.writeFileSync(abs, content, 'utf8')
     }
     res.json({ ok: true, path: toRel(abs) })
@@ -463,20 +464,13 @@ app.put('/api/file', (req, res) => {
 app.post('/api/mkdir', (req, res) => {
   try {
     const abs = safeJoin(req.body.path || '')
-    if (req.body.createOnly === true) {
-      const base = fs.realpathSync(root())
-      const parent = fs.realpathSync(path.dirname(abs))
-      const relative = path.relative(base, parent)
-      if (path.isAbsolute(relative) || relative.split(path.sep)[0] === '..') {
-        return res.status(400).json({ error: 'Destination is outside the project.' })
-      }
-      fs.mkdirSync(path.join(parent, path.basename(abs)))
-      return res.json({ ok: true, path: toRel(abs) })
+    if (req.body.createOnly === true && fs.existsSync(abs)) {
+      return res.status(409).json({ error: 'That directory already exists.' })
     }
     fs.mkdirSync(abs, { recursive: true })
     res.json({ ok: true, path: toRel(abs) })
   } catch (err) {
-    res.status(err.status || 500).json({ error: err.message })
+    res.status(err.code === 'EEXIST' ? 409 : err.status || 500).json({ error: err.message })
   }
 })
 
@@ -599,8 +593,10 @@ mountJavaValidation(app, { root })
 
 const distCandidates = [
   path.join(__dirname, '..', 'frontend', 'dist'),
+  path.join(__dirname, '..', '..', 'frontend', 'dist'),
   path.join(process.cwd(), 'frontend', 'dist'),
   process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked', 'frontend', 'dist') : null,
+  process.resourcesPath ? path.join(process.resourcesPath, 'app.asar', 'frontend', 'dist') : null,
   process.resourcesPath ? path.join(process.resourcesPath, 'frontend', 'dist') : null
 ].filter(Boolean)
 
@@ -617,6 +613,13 @@ if (distPath) {
   console.warn('[Backend] Warning: frontend/dist not found. Run `npm run build` to generate production frontend bundle.')
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Aether backend on ${PORT} root=${root()}`)
+})
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.warn(`[Backend] Port ${PORT} already in use. Reusing active server instance.`)
+  } else {
+    console.error('[Backend] Server error:', err)
+  }
 })

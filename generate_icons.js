@@ -304,6 +304,26 @@ function generateIcoFromPng(pngBuf) {
   return Buffer.concat([header, entry, pngBuf])
 }
 
+// 4. Package macOS standard .icns structure with 512x512 and 256x256 PNGs
+function generateIcns(png512Buf, png256Buf) {
+  // ic09 chunk (512x512 32-bit PNG)
+  const chunk512 = Buffer.alloc(8)
+  chunk512.write('ic09', 0, 4, 'ascii')
+  chunk512.writeUInt32BE(8 + png512Buf.length, 4)
+
+  // ic08 chunk (256x256 32-bit PNG)
+  const chunk256 = Buffer.alloc(8)
+  chunk256.write('ic08', 0, 4, 'ascii')
+  chunk256.writeUInt32BE(8 + png256Buf.length, 4)
+
+  const totalLen = 8 + 8 + png512Buf.length + 8 + png256Buf.length
+  const header = Buffer.alloc(8)
+  header.write('icns', 0, 4, 'ascii')
+  header.writeUInt32BE(totalLen, 4)
+
+  return Buffer.concat([header, chunk512, png512Buf, chunk256, png256Buf])
+}
+
 console.log('Generating high-resolution 512x512 3D Apple-style PNG icon...')
 const png512 = generatePngBuffer(512)
 fs.writeFileSync(path.join(BUILD_DIR, 'icon.png'), png512)
@@ -311,7 +331,12 @@ fs.writeFileSync(path.join(ELECTRON_DIR, 'icon.png'), png512)
 fs.writeFileSync(path.join(PUBLIC_DIR, 'icon.png'), png512)
 fs.writeFileSync(path.join(PUBLIC_DIR, 'logo.png'), png512)
 fs.writeFileSync(path.join(PUBLIC_DIR, 'favicon.png'), png512)
-console.log('✓ Written build/icon.png, electron/icon.png, and frontend/public PNG icons')
+// Overwrite all legacy JPEG references so no outdated cache or image can load
+fs.writeFileSync(path.join(PUBLIC_DIR, 'favicon.jpg'), png512)
+fs.writeFileSync(path.join(PUBLIC_DIR, 'favicon.jpeg'), png512)
+fs.writeFileSync(path.join(PUBLIC_DIR, 'icon.jpg'), png512)
+fs.writeFileSync(path.join(PUBLIC_DIR, 'logo.jpg'), png512)
+console.log('✓ Written build/icon.png, electron/icon.png, and frontend/public PNG/JPG icons')
 
 console.log('Generating 192x192 mobile PWA icon...')
 const png192 = generatePngBuffer(192)
@@ -325,5 +350,11 @@ fs.writeFileSync(path.join(BUILD_DIR, 'icon.ico'), icoBuf)
 fs.writeFileSync(path.join(ELECTRON_DIR, 'icon.ico'), icoBuf)
 fs.writeFileSync(path.join(PUBLIC_DIR, 'favicon.ico'), icoBuf)
 console.log('✓ Written Windows .ico icons')
+
+console.log('Generating macOS .icns icon file...')
+const icnsBuf = generateIcns(png512, png256)
+fs.writeFileSync(path.join(BUILD_DIR, 'icon.icns'), icnsBuf)
+fs.writeFileSync(path.join(ELECTRON_DIR, 'icon.icns'), icnsBuf)
+console.log('✓ Written macOS build/icon.icns and electron/icon.icns')
 
 console.log('\nAll 3D Apple-style basic icons generated successfully!')
