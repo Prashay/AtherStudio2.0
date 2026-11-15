@@ -12,6 +12,7 @@
     "electron:dev": "node start.js",
     "install:all": "npm --prefix backend install && npm --prefix frontend install && npm --prefix pulse ci && npm install",
     "build": "npm --prefix frontend install && npm --prefix frontend run build && npm run build:pulse",
+    "build:pages": "npm --prefix frontend run build -- --mode pages && npm --prefix pulse run build -- --mode pages && node -e \"require('node:fs').cpSync('pulse/dist', 'frontend/dist/pulse', { recursive: true })\"",
     "build:pulse": "npm --prefix pulse ci --no-audit --no-fund && npm --prefix pulse run build",
     "electron:build": "npm run build && electron-builder --win dir",
     "electron:build:dir": "npm run build && electron-builder --win dir",

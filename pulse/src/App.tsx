@@ -114,12 +114,27 @@ export default function App({ initialData }: { initialData: AppData }) {
     setViewMode(mode);
     localStorage.setItem("pulse_view_mode", mode);
     window.pulseDesktop?.reportViewMode?.(mode);
+    if (import.meta.env.MODE === "pages" && window.parent !== window) {
+      window.parent.postMessage({ type: "pulse:view-mode", mode }, window.location.origin);
+    }
   };
   useEffect(() => {
-    return window.pulseDesktop?.onViewMode?.((mode) => {
+    const selectView = (mode: "studio" | "dashboard") => {
       setViewMode(mode);
       localStorage.setItem("pulse_view_mode", mode);
-    });
+    };
+    if (window.pulseDesktop) return window.pulseDesktop.onViewMode?.(selectView);
+    if (import.meta.env.MODE !== "pages" || window.parent === window) return;
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.source !== window.parent || event.origin !== window.location.origin) return;
+      if (event.data?.type !== "pulse:select-view") return;
+      const mode = event.data.mode;
+      if (mode === "studio" || mode === "dashboard") selectView(mode);
+    };
+    window.addEventListener("message", onMessage);
+    window.parent.postMessage({ type: "pulse:ready" }, window.location.origin);
+    return () => window.removeEventListener("message", onMessage);
   }, []);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isSmallScreen, setIsSmallScreen] = useState(() => window.matchMedia("(max-width: 960px)").matches);

@@ -501,19 +501,53 @@ function TreeNode({ node, depth, active, onOpen, openDirs, toggleDir, loadDirect
 export default function App() {
   const [pulseMode, setPulseMode] = useState(null)
   const topbarRef = useRef(null)
+  const pulseFrameRef = useRef(null)
+  const [pulseFrameTop, setPulseFrameTop] = useState(0)
   const pulseBridge = window.electronAPI?.pulse
+  const webPulse = !pulseBridge && import.meta.env.MODE === 'pages'
+  const selectPulseView = (next) => {
+    if (pulseBridge) pulseBridge.select(next)
+    else if (webPulse) setPulseMode(next)
+  }
+
+  useEffect(() => {
+    if (!webPulse) return
+    const onMessage = (event) => {
+      const frame = pulseFrameRef.current?.contentWindow
+      if (event.origin !== window.location.origin || event.source !== frame) return
+      if (event.data?.type === 'pulse:ready' && pulseMode) {
+        frame.postMessage({ type: 'pulse:select-view', mode: pulseMode }, window.location.origin)
+      } else if (event.data?.type === 'pulse:view-mode' && pulseMode &&
+        (event.data.mode === 'studio' || event.data.mode === 'dashboard')) {
+        setPulseMode(event.data.mode)
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [webPulse, pulseMode])
+
+  useEffect(() => {
+    if (!webPulse || !pulseMode) return
+    pulseFrameRef.current?.contentWindow?.postMessage(
+      { type: 'pulse:select-view', mode: pulseMode }, window.location.origin
+    )
+  }, [webPulse, pulseMode])
 
   useEffect(() => pulseBridge?.onMode(setPulseMode), [pulseBridge])
 
   useEffect(() => {
-    if (!pulseBridge || !topbarRef.current) return
+    if ((!pulseBridge && !webPulse) || !topbarRef.current) return
     const topbar = topbarRef.current
-    const updateBounds = () => pulseBridge.setTop(topbar.getBoundingClientRect().bottom)
+    const updateBounds = () => {
+      const bottom = topbar.getBoundingClientRect().bottom
+      if (pulseBridge) pulseBridge.setTop(bottom)
+      else setPulseFrameTop(bottom)
+    }
     const observer = new ResizeObserver(updateBounds)
     observer.observe(topbar)
     updateBounds()
     return () => observer.disconnect()
-  }, [pulseBridge])
+  }, [pulseBridge, webPulse])
 
   const [mode, setMode] = useState(() => {
     if (pulseBridge) return 'editor'
@@ -2377,7 +2411,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       <header
         ref={topbarRef}
         onClickCapture={(event) => {
-          if (pulseMode && !event.target.closest('.modes, .window-controls-win, .window-controls-mac')) pulseBridge.select(null)
+          if (pulseMode && !event.target.closest('.modes, .window-controls-win, .window-controls-mac')) selectPulseView(null)
         }}
         className={`topbar ${isMac ? 'platform-mac' : 'platform-win'} ${isElectron ? 'is-electron' : 'is-web'}`}
         onDoubleClick={(e) => {
@@ -2452,12 +2486,12 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           </div>
         </details>
         <div className="modes" role="group" aria-label="Workspace views">
-          <button aria-pressed={!pulseMode && mode === 'editor'} className={!pulseMode && mode === 'editor' ? 'on' : ''} onClick={() => { pulseBridge?.select(null); switchMode('editor') }}>IDE</button>
-          <button aria-pressed={!pulseMode && mode === 'agent'} className={!pulseMode && mode === 'agent' ? 'on' : ''} onClick={() => { pulseBridge?.select(null); switchMode('agent') }}>Agent</button>
-          {pulseBridge && (
+          <button aria-pressed={!pulseMode && mode === 'editor'} className={!pulseMode && mode === 'editor' ? 'on' : ''} onClick={() => { selectPulseView(null); switchMode('editor') }}>IDE</button>
+          <button aria-pressed={!pulseMode && mode === 'agent'} className={!pulseMode && mode === 'agent' ? 'on' : ''} onClick={() => { selectPulseView(null); switchMode('agent') }}>Agent</button>
+          {(pulseBridge || webPulse) && (
             <>
-              <button aria-pressed={pulseMode === 'studio'} className={pulseMode === 'studio' ? 'on' : ''} onClick={() => pulseBridge.select('studio')}>Studio</button>
-              <button aria-pressed={pulseMode === 'dashboard'} className={pulseMode === 'dashboard' ? 'on' : ''} onClick={() => pulseBridge.select('dashboard')}>Dashboard</button>
+              <button aria-pressed={pulseMode === 'studio'} className={pulseMode === 'studio' ? 'on' : ''} onClick={() => selectPulseView('studio')}>Studio</button>
+              <button aria-pressed={pulseMode === 'dashboard'} className={pulseMode === 'dashboard' ? 'on' : ''} onClick={() => selectPulseView('dashboard')}>Dashboard</button>
             </>
           )}
         </div>
@@ -2687,6 +2721,15 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           </div>
         )}
       </header>
+      {webPulse && (
+        <iframe
+          ref={pulseFrameRef}
+          title="Pulse API Studio"
+          src="./pulse/index.html"
+          hidden={!pulseMode}
+          style={{ position: 'fixed', inset: `${pulseFrameTop}px 0 0`, width: '100%', height: `calc(100% - ${pulseFrameTop}px)`, border: 0, zIndex: 99 }}
+        />
+      )}
 
       <input
         type="file"

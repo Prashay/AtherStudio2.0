@@ -540,6 +540,7 @@ export async function sendRequest(
   if (!responseData) {
     const proxyUrl = `${getProxyBaseUrl()}/api/proxy`;
     try {
+      if (import.meta.env.MODE === "pages") throw new Error("Static hosting has no request proxy.");
       const res = await fetch(proxyUrl, {
         method: "POST",
         signal,
