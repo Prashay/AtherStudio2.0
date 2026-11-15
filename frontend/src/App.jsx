@@ -1617,7 +1617,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       setFolderOpen(false)
     } catch (error) {
       if (error.name !== 'AbortError') {
-        if (webPulse) setImportNotice('The browser could not access that folder. Try importing a copy.')
+        if (webPulse) setImportNotice('The browser could not open that folder directly. Use Import Folder to open a copy.')
         else setBrowseErr('The browser could not access that folder. Enter its path or import a copy.')
         setLeftOpen(true)
         if (window.innerWidth <= 860) setPane('files')
@@ -2480,6 +2480,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           <summary title={workspace.root || 'Switch project'}><span>{workspace.name || 'Open Project'}</span><span className="project-switcher-chevron" aria-hidden="true" /></summary>
           <div>
             <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; openFolderPicker() }}>Open Project…</button>
+            {webPulse && <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; importFiles(folderInputRef) }}>Import Folder…</button>}
             {!webPulse && recentProjects.length > 0 && <strong>Recent Projects</strong>}
             {!webPulse && recentProjects.map((item) => (
               <button type="button" key={item.root} onClick={(event) => {
@@ -2742,6 +2743,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         type="file"
         ref={folderInputRef}
         webkitdirectory="true"
+        multiple
         directory="true"
         style={{ display: 'none' }}
         onChange={handleVirtualInput}
@@ -3643,6 +3645,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     : workspace.root ? 'Choose a file in the explorer to start editing.' : 'Open a project folder to browse, search, and edit your files.'}</p>
                   <div className="workbench-actions">
                     <button className="primary" onClick={openFolderPicker}>Open project</button>
+                    {webPulse && <button className="ghost" onClick={() => importFiles(folderInputRef)}>Import folder</button>}
                     <button className="ghost" onClick={() => mode === 'agent' ? openChat() : createNewFile()}>
                       {mode === 'agent' ? 'Focus agent' : 'New Markdown'}
                     </button>
