@@ -451,7 +451,7 @@
 [data-workbench-theme="blue"] { --theme-bg: #070a12; --theme-side: #0d1322; --theme-card: #141c30; --theme-text: #fff; --theme-muted: #94a3b8; }
 [data-workbench-theme="dark"] { --theme-bg: #08090d; --theme-side: #0e1017; --theme-card: #151822; --theme-text: #fff; --theme-muted: #9ca3af; }
 [data-workbench-theme="light"] { --theme-bg: #f5f5f7; --theme-side: #fff; --theme-card: #fff; --theme-text: #1d1d1f; --theme-muted: #646469; }
-[data-workbench-theme="glass"] { --theme-bg: #fff; --theme-side: #fff3eb; --theme-card: #ffdfcc; --theme-text: #32231d; --theme-muted: #6e5346; }
+[data-workbench-theme="glass"] { --theme-bg: #151415; --theme-side: #292523; --theme-card: #342d29; --theme-text: #f6f0e9; --theme-muted: #bfb5ad; }
 [data-workbench-theme="pearl"] { --theme-bg: #eef0f3; --theme-side: #edf4fb; --theme-card: #e4f0ff; --theme-text: #182334; --theme-muted: #526074; }
 
 [data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench {
@@ -470,7 +470,7 @@
 [data-workbench-theme="blue"] { --theme-wallpaper: url('./theme-wallpapers/midnight-blue-backdrop.png'); --theme-tint: #070a128f; }
 [data-workbench-theme="dark"] { --theme-wallpaper: url('./theme-wallpapers/deep-charcoal-backdrop.png'); --theme-tint: #08090d85; }
 [data-workbench-theme="light"] { --theme-wallpaper: url('./theme-wallpapers/apple-light-backdrop.png'); --theme-tint: #ffffff66; }
-[data-workbench-theme="glass"] { --theme-wallpaper: url('./theme-wallpapers/frosted-glass-backdrop.png'); --theme-tint: #fffaf666; }
+[data-workbench-theme="glass"] { --theme-wallpaper: url('./theme-wallpapers/frosted-glass-backdrop.png'); --theme-tint: #211711cf; }
 [data-workbench-theme="pearl"] { --theme-wallpaper: url('./theme-wallpapers/pearl-glass-backdrop.png'); --theme-tint: #eef0f360; }
 
 [data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench.app {
@@ -507,13 +507,13 @@
   color: var(--theme-text);
 }
 [data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench .stage { background: var(--glass-panel); }
-:is([data-workbench-theme="light"], [data-workbench-theme="glass"], [data-workbench-theme="pearl"]) .app.intellij-workbench {
+:is([data-workbench-theme="light"], [data-workbench-theme="pearl"]) .app.intellij-workbench {
   color-scheme: light;
 }
-:is([data-workbench-theme="light"], [data-workbench-theme="glass"], [data-workbench-theme="pearl"]) :is(.java-keyword, .java-type, .java-annotation) { color: #8a3818; }
-:is([data-workbench-theme="light"], [data-workbench-theme="glass"], [data-workbench-theme="pearl"]) :is(.java-method, .java-import, .java-literal) { color: #214e93; }
-:is([data-workbench-theme="light"], [data-workbench-theme="glass"], [data-workbench-theme="pearl"]) .java-string { color: #306226; }
-:is([data-workbench-theme="light"], [data-workbench-theme="glass"], [data-workbench-theme="pearl"]) .java-comment { color: #615e65; }
+:is([data-workbench-theme="light"], [data-workbench-theme="pearl"]) :is(.java-keyword, .java-type, .java-annotation) { color: #8a3818; }
+:is([data-workbench-theme="light"], [data-workbench-theme="pearl"]) :is(.java-method, .java-import, .java-literal) { color: #214e93; }
+:is([data-workbench-theme="light"], [data-workbench-theme="pearl"]) .java-string { color: #306226; }
+:is([data-workbench-theme="light"], [data-workbench-theme="pearl"]) .java-comment { color: #615e65; }
 [data-workbench-theme]:not([data-workbench-theme="frenky-orange"]) .app.intellij-workbench .stage:has(.workbench-home) {
   background: var(--glass-panel);
 }
@@ -523,7 +523,7 @@
 [data-workbench-theme="blue"] { --theme-accent: #3b82f6; --theme-accent-ink: #091322; }
 [data-workbench-theme="dark"] { --theme-accent: #8b5cf6; --theme-accent-ink: #140d20; }
 [data-workbench-theme="light"] { --theme-accent: #0071e3; --theme-accent-ink: #fff; }
-[data-workbench-theme="glass"] { --theme-accent: #a63c12; --theme-accent-ink: #fff; }
+[data-workbench-theme="glass"] { --theme-accent: #ff7624; --theme-accent-ink: #21130d; }
 [data-workbench-theme="pearl"] { --theme-accent: #285ac5; --theme-accent-ink: #fff; }
 
 [data-theme="warm-glass"] { --custom-accent: #ff7624; }
@@ -561,4 +561,79 @@
   background: var(--glass-selection);
   border-color: var(--glass-edge);
   color: var(--paper);
+}
+.app.intellij-workbench .topbar :is(.workbench-menu-bar, .workbench-menu-items, .toolbar-popover > div, .ide-new-items) {
+  padding: 6px;
+  background: var(--glass-popover);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 14px 34px #0005, inset 0 1px #ffffff16;
+  color: var(--paper);
+}
+.app.intellij-workbench .topbar :is(.workbench-menu-items, .toolbar-popover > div) {
+  top: calc(100% + 6px);
+  min-width: min(205px, 80vw);
+}
+.app.intellij-workbench .topbar .workbench-menu-items :is(button, .ide-new-menu > button),
+.app.intellij-workbench .topbar .toolbar-popover > div button {
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  line-height: 1.35;
+}
+.app.intellij-workbench .topbar :is(.workbench-menu-items, .toolbar-popover > div) button:hover:not(:disabled),
+.app.intellij-workbench .topbar :is(.workbench-menu-items, .toolbar-popover > div) button:focus-visible {
+  background: var(--glass-selection);
+  border-color: var(--glass-edge);
+}
+.app.intellij-workbench .topbar .launch-selector select {
+  appearance: none;
+  min-height: 30px;
+  padding: 4px 30px 4px 10px;
+  background:
+    linear-gradient(45deg, transparent 49%, var(--muted) 51%) right 14px center / 4px 4px no-repeat,
+    linear-gradient(135deg, var(--muted) 49%, transparent 51%) right 10px center / 4px 4px no-repeat,
+    var(--glass-field);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.app.intellij-workbench .topbar .launch-selector select:hover { border-color: var(--glass-edge); }
+.app.intellij-workbench .topbar .launch-selector select:focus-visible {
+  outline: 2px solid var(--glass-action);
+  outline-offset: 2px;
+}
+.app.intellij-workbench .topbar .launch-selector select option {
+  background: var(--panel);
+  color: var(--paper);
+}
+@supports (appearance: base-select) and selector(select::picker(select)) {
+  .app.intellij-workbench .topbar .launch-selector select,
+  .app.intellij-workbench .topbar .launch-selector select::picker(select) {
+    appearance: base-select;
+  }
+  .app.intellij-workbench .topbar .launch-selector select::picker-icon { display: none; }
+  .app.intellij-workbench .topbar .launch-selector select::picker(select) {
+    margin-top: 6px;
+    padding: 5px;
+    min-width: max(180px, anchor-size(width));
+    max-height: min(320px, 60vh);
+    overflow: auto;
+    background: var(--glass-popover);
+    color: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: 0 14px 34px #0005;
+  }
+  .app.intellij-workbench .topbar .launch-selector select option {
+    padding: 7px 9px;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+  }
+  .app.intellij-workbench .topbar .launch-selector select option:is(:checked, :hover, :focus-visible) {
+    background: var(--glass-selection);
+  }
+  .app.intellij-workbench .topbar .launch-selector select option::checkmark { color: var(--glass-action); }
+  .app.intellij-workbench .topbar .launch-selector select option:last-child { border-top: 1px solid var(--line); }
 }

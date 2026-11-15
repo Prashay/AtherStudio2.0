@@ -10,8 +10,9 @@
     "dev:web": "node start.js --no-electron",
     "electron": "electron electron/main.cjs",
     "electron:dev": "node start.js",
-    "install:all": "npm --prefix backend install && npm --prefix frontend install && npm install",
-    "build": "npm --prefix frontend install && npm --prefix frontend run build",
+    "install:all": "npm --prefix backend install && npm --prefix frontend install && npm --prefix pulse ci && npm install",
+    "build": "npm --prefix frontend install && npm --prefix frontend run build && npm run build:pulse",
+    "build:pulse": "npm --prefix pulse ci --no-audit --no-fund && npm --prefix pulse run build",
     "electron:build": "npm run build && electron-builder --win dir",
     "electron:build:dir": "npm run build && electron-builder --win dir",
     "electron:build:zip": "npm run build && electron-builder --win zip",
@@ -39,6 +40,11 @@
       "electron/**/*",
       "backend/**/*",
       "frontend/dist/**/*",
+      "pulse/dist/**/*",
+      "pulse/preload.cjs",
+      "pulse/server.js",
+      "pulse/package.json",
+      "pulse/LICENSE",
       "package.json"
     ],
     "win": {
@@ -106,6 +112,7 @@
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-resizable-panels": "^2.1.9",
+    "undici": "^7.30.2",
     "zod": "^4",
     "zustand": "^5.1.0"
   }

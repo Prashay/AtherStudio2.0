@@ -4,6 +4,7 @@ const http = require('http')
 const net = require('net')
 const fs = require('fs')
 const os = require('os')
+const pulse = require('./pulse-view.cjs')
 
 // Prevent black screen & occlusion compositing bugs on macOS Apple Silicon (M1/M2/M3)
 if (process.platform === 'darwin') {
@@ -337,27 +338,11 @@ function createSplashWindow() {
   splashWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(splashHtml))
 }
 
-function getFrontendDistPath() {
-  const candidates = [
-    path.join(__dirname, '..', 'frontend', 'dist', 'index.html'),
-    path.join(app.getAppPath(), 'frontend', 'dist', 'index.html'),
-    process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked', 'frontend', 'dist', 'index.html') : null,
-    process.resourcesPath ? path.join(process.resourcesPath, 'app.asar', 'frontend', 'dist', 'index.html') : null,
-    process.resourcesPath ? path.join(process.resourcesPath, 'frontend', 'dist', 'index.html') : null,
-    path.join(process.cwd(), 'frontend', 'dist', 'index.html')
-  ].filter(Boolean)
-
-  for (const p of candidates) {
-    if (fs.existsSync(p)) return p
-  }
-  return null
-}
-
 async function loadAppUrl(window) {
   if (!window || window.isDestroyed()) return
 
   // 1. Fast check for Vite dev server (quick 180ms TCP check for development)
-  const isViteUp = await checkPortOpen(frontendPort, 180)
+  const isViteUp = isDev && await checkPortOpen(frontendPort, 180)
   if (isViteUp) {
     console.log(`[Electron] Connecting to frontend dev server at ${DEV_URL}`)
     try {
@@ -367,32 +352,22 @@ async function loadAppUrl(window) {
       }
       return
     } catch (err) {
-      console.warn('[Electron] Failed to connect to DEV_URL, falling back to local file:', err.message)
+      console.warn('[Electron] Failed to load the dev server:', err.message)
     }
   }
 
-  // 2. Production / Standalone mode: load local frontend bundle directly (0ms network delay, never black screen!)
-  const distHtml = getFrontendDistPath()
-  if (distHtml) {
-    console.log(`[Electron] Loading production frontend directly from disk: ${distHtml}`)
+  // Serve the UI and its relative /api requests from the same local origin.
+  if (await ensureBackend() && !window.isDestroyed()) {
+    console.log(`[Electron] Loading via backend server at ${PROD_URL}`)
     try {
-      await window.loadFile(distHtml)
+      await window.loadURL(PROD_URL)
       return
     } catch (err) {
-      console.warn('[Electron] Local file load failed, attempting backend URL:', err.message)
+      console.warn('[Electron] Failed to load the local workspace:', err.message)
     }
   }
 
-  // 3. Fallback: load through backend server if available
-  const isBackendUp = await checkPortOpen(backendPort, 1200)
-  if (isBackendUp) {
-    console.log(`[Electron] Loading via backend server at ${PROD_URL}`)
-    await window.loadURL(PROD_URL).catch(() => {})
-    return
-  }
-
-  // 4. Graceful error card (never leave user on a black blank screen!)
-  const distFallback = distHtml ? `file://${distHtml}` : `${PROD_URL}`
+  if (window.isDestroyed()) return
   const errorHtml = `
     <!DOCTYPE html>
     <html>
@@ -410,7 +385,7 @@ async function loadAppUrl(window) {
     <body>
       <h2>Starting Arther Studio...</h2>
       <p>The application workspace is initializing. Click below to refresh.</p>
-      <button onclick="location.href='${distFallback}'">Reload Workspace</button>
+      <button onclick="location.href='${PROD_URL}'">Reload Workspace</button>
     </body>
     </html>
   `
@@ -465,6 +440,9 @@ function setupApplicationMenu() {
           accelerator: 'CmdOrCtrl+S',
           click: () => mainWindow?.webContents.send('menu-action', 'save')
         },
+        { type: 'separator' },
+        { label: 'Run Java File', click: () => mainWindow?.webContents.send('menu-action', 'run-java') },
+        { label: 'Debug Java File', click: () => mainWindow?.webContents.send('menu-action', 'debug-java') },
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' }
       ]
@@ -547,6 +525,8 @@ function createWindow() {
     }
   })
 
+  const pulseLoaded = pulse.attach(mainWindow)
+
   // Open external links in user's default OS browser
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('http:') || url.startsWith('https:')) {
@@ -590,16 +570,6 @@ function createWindow() {
   // Fallback safety timeout (reduced from 7000ms to 1800ms)
   setTimeout(revealMainWindow, 1800)
 
-  // Auto-recovery if initial URL load encounters any network delay or error
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
-    console.warn(`[Electron] URL load error (${errorCode}): ${errorDescription} on ${validatedURL}`)
-    const distHtml = getFrontendDistPath()
-    if (distHtml && !validatedURL.startsWith('file://')) {
-      console.log('[Electron] Immediately recovering by loading local bundle from disk:', distHtml)
-      mainWindow.loadFile(distHtml).catch(() => {})
-    }
-  })
-
   loadAppUrl(mainWindow)
 
   mainWindow.on('maximize', () => {
@@ -619,9 +589,6 @@ app.whenReady().then(async () => {
   setupApplicationMenu()
   createSplashWindow()
   
-  // Non-blocking background backend initialization (never delays window creation)
-  ensureBackend().catch((err) => console.error('[Electron] Background backend error:', err))
-
   createWindow()
   setMacDockIcon()
 

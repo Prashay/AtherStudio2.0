@@ -1,0 +1,115 @@
+const { app, ipcMain, shell, utilityProcess, WebContentsView } = require('electron')
+const path = require('node:path')
+const { pathToFileURL } = require('node:url')
+const fs = require('node:fs')
+const registerPulseServices = require('./pulse-services.cjs')
+
+const pulseRoot = path.join(__dirname, '..', 'pulse')
+const rendererUrl = pathToFileURL(path.join(pulseRoot, 'dist', 'index.html')).href
+let workspace
+let mockServer
+
+function fromMainFrame(event, contents) {
+  return event.sender === contents && event.senderFrame === contents.mainFrame
+}
+
+const fromPulse = (event) => Boolean(workspace &&
+  fromMainFrame(event, workspace.view.webContents) &&
+  event.senderFrame.url.split('#')[0] === rendererUrl)
+
+registerPulseServices(fromPulse)
+
+function resize() {
+  const { window, view, top } = workspace
+  const [width, height] = window.getContentSize()
+  const y = Math.min(height, Math.max(0, Math.ceil(top * window.webContents.getZoomFactor())))
+  view.setBounds({ x: 0, y, width, height: height - y })
+}
+
+function isPulseMode(mode) {
+  return mode === 'studio' || mode === 'dashboard'
+}
+
+ipcMain.on('ather:pulse-top', (event, top) => {
+  if (!workspace || !fromMainFrame(event, workspace.window.webContents) || !Number.isFinite(top)) return
+  workspace.top = top
+  resize()
+})
+
+ipcMain.on('ather:pulse-select', (event, mode) => {
+  if (!workspace || !fromMainFrame(event, workspace.window.webContents)) return
+  if (mode !== null && !isPulseMode(mode)) return
+  const { window, view } = workspace
+  workspace.mode = mode
+  window.webContents.send('ather:pulse-mode', mode)
+  if (mode === null) {
+    view.setVisible(false)
+    window.webContents.focus()
+    return
+  }
+  resize()
+  view.setVisible(true)
+  if (workspace.rendererReady) view.webContents.send('pulse:select-view', mode)
+  view.webContents.focus()
+})
+
+ipcMain.on('pulse:ready', (event) => {
+  if (!fromPulse(event)) return
+  workspace.rendererReady = true
+  if (workspace.mode) event.sender.send('pulse:select-view', workspace.mode)
+})
+
+ipcMain.on('pulse:view-mode', (event, mode) => {
+  if (!fromPulse(event) || !workspace.mode || !isPulseMode(mode)) return
+  workspace.mode = mode
+  workspace.window.webContents.send('ather:pulse-mode', mode)
+})
+
+app.on('before-quit', () => mockServer?.kill())
+
+exports.attach = (window) => {
+  if (!mockServer) {
+    mockServer = utilityProcess.fork(path.join(pulseRoot, 'server.js'), [], {
+      env: { ...process.env, PORT: '3001' },
+      serviceName: 'Pulse Local API',
+    })
+    mockServer.once('exit', () => { mockServer = undefined })
+  }
+
+  const view = new WebContentsView({
+    webPreferences: {
+      preload: path.join(pulseRoot, 'preload.cjs'),
+      partition: 'persist:pulse-api-studio',
+      contextIsolation: true,
+      nodeIntegration: false,
+      backgroundThrottling: false,
+    },
+  })
+  workspace = { window, view, top: 44, mode: null, rendererReady: false }
+  window.contentView.addChildView(view)
+  view.setVisible(false)
+  resize()
+  window.on('resize', resize)
+  window.once('closed', () => {
+    if (!view.webContents.isDestroyed()) view.webContents.close()
+    workspace = undefined
+  })
+  view.webContents.on('will-navigate', (event) => event.preventDefault())
+  view.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  view.webContents.on('did-start-loading', () => { workspace.rendererReady = false })
+
+  return view.webContents.loadURL(rendererUrl).catch((error) => {
+    console.error('[Pulse] Failed to load workspace:', error.message)
+    const message = fs.existsSync(path.join(pulseRoot, 'dist', 'index.html'))
+      ? 'Pulse could not start.'
+      : 'Run npm run build:pulse to build the Pulse workspace.'
+    if (!view.webContents.isDestroyed()) {
+      return view.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
+        '<body style="background:#090d16;color:white;font:16px sans-serif;padding:24px">' + message + '</body>'
+      )).catch(() => {})
+    }
+  })
+}

@@ -11,12 +11,25 @@ function discoverApplications(workspace) {
   function visit(directory, pom = null, inSources = false) {
     if (fs.existsSync(path.join(directory, 'pom.xml'))) pom = path.relative(workspace, path.join(directory, 'pom.xml')).split(path.sep).join('/')
     inSources ||= directory.endsWith(path.join('src', 'main', 'java'))
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    let entries
+    try {
+      entries = fs.readdirSync(directory, { withFileTypes: true })
+    } catch (err) {
+      if (directory === workspace) throw err
+      return
+    }
+    for (const entry of entries) {
       if (entry.name.startsWith('.') || ['target', 'build', 'dist', 'node_modules'].includes(entry.name)) continue
       const file = path.join(directory, entry.name)
       if (entry.isDirectory()) visit(file, pom, inSources)
-      if ((pom && !inSources) || !entry.isFile() || !entry.name.endsWith('.java') || fs.statSync(file).size > 512000) continue
-      const source = fs.readFileSync(file, 'utf8').replace(/"(?:\\.|[^"\\])*"|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g, '')
+      if ((pom && !inSources) || !entry.isFile() || !entry.name.endsWith('.java')) continue
+      let source
+      try {
+        if (fs.statSync(file).size > 512000) continue
+        source = fs.readFileSync(file, 'utf8').replace(/"(?:\\.|[^"\\])*"|\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g, '')
+      } catch {
+        continue
+      }
       if (!/\b(?:public\s+static|static\s+public)\s+void\s+main\s*\(\s*(?:final\s+)?(?:java\.lang\.)?String\s*(?:(?:\[\s*\]|\.\.\.)\s*[\w$]+|[\w$]+\s*\[\s*\])\s*\)/.test(source)) continue
       const pkg = source.match(/\bpackage\s+([\w.]+)\s*;/)?.[1]
       const className = [pkg, entry.name.slice(0, -5)].filter(Boolean).join('.')
@@ -78,8 +91,11 @@ function mountMaven(app, { root, safeJoin }) {
     res.sendStatus(204)
   })
   let active = false
-  app.get('/api/maven/applications', (_req, res) => {
+  app.get('/api/maven/applications', (req, res) => {
     try {
+      if (req.query?.project && req.query.project !== root()) {
+        return res.status(409).json({ error: 'The active workspace changed. Reopen this project to load its Java main classes.' })
+      }
       res.json({ applications: root() ? discoverApplications(root()) : [], jdks: findJdks() })
     } catch {
       res.status(400).json({ error: 'Could not scan the active workspace for Java applications.' })

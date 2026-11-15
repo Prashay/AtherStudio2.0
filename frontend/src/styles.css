@@ -7889,10 +7889,10 @@ body.resizing-col * {
 .gutter-run-menu button:hover { background: #354766; }
 .gutter-run-menu button:disabled { opacity: .45; }
 
-.tabs .editor-tab { flex: 0 0 auto; gap: 3px; padding: 0 4px 0 0; cursor: default; }
+.tabs .editor-tab { position: relative; flex: 0 0 auto; gap: 0; padding: 0; cursor: default; }
 .editor-tab-label, .editor-tab-close { border: 0; background: transparent; color: inherit; cursor: pointer; }
-.editor-tab-label { min-width: 0; padding: 6px 3px 6px 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; }
-.editor-tab-close { flex: 0 0 22px; width: 22px; height: 22px; border-radius: 4px; font: 16px/1 system-ui, sans-serif; opacity: .7; }
+.editor-tab-label { width: 100%; min-width: 0; padding: 6px 27px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font: inherit; }
+.editor-tab-close { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: grid; place-items: center; padding: 0; width: 22px; height: 22px; border-radius: 4px; font: 16px/1 system-ui, sans-serif; opacity: .7; }
 .editor-tab-close:hover, .editor-tab-close:focus-visible { opacity: 1; background: #ffffff20; }
 .editor-tab-strip { display: flex; flex: 1 1 0; align-items: center; min-width: 0; gap: 4px; }
 .editor-tab-strip .editor-visible-tabs { min-width: 0; overflow: hidden; }

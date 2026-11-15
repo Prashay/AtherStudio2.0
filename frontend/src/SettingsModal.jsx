@@ -217,7 +217,7 @@ export function SettingsModal({
                       ['blue', 'Midnight Blue', '#141c30'],
                       ['dark', 'Deep Charcoal', '#151822'],
                       ['light', 'Apple Light', '#f5f5f7'],
-                      ['glass', 'Frosted Glass', '#ffdfcc'],
+                      ['glass', 'Frosted Glass', '#342d29'],
                       ['pearl', 'Pearl Glass', '#e4f0ff']
                     ].map(([id, label, color]) => {
                       const active = (localSettings.workbenchTheme || DEFAULT_SETTINGS.workbenchTheme) === id

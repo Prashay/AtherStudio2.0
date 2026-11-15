@@ -3,6 +3,15 @@ const { contextBridge, ipcRenderer, webFrame } = require('electron')
 // Expose safe, rich desktop features to the renderer process
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
+  pulse: {
+    select: (mode) => ipcRenderer.send('ather:pulse-select', mode),
+    setTop: (top) => ipcRenderer.send('ather:pulse-top', top),
+    onMode: (callback) => {
+      const listener = (_event, mode) => callback(mode)
+      ipcRenderer.on('ather:pulse-mode', listener)
+      return () => ipcRenderer.removeListener('ather:pulse-mode', listener)
+    },
+  },
   platform: process.platform,
 
   // Window Controls & Platform

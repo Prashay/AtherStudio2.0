@@ -49,24 +49,20 @@ function waitForHttp(url, timeoutMs = 25000) {
   const start = Date.now()
   return new Promise((resolve, reject) => {
     function tryConnect() {
+      let retryScheduled = false
+      const retry = () => {
+        if (retryScheduled) return
+        retryScheduled = true
+        if (Date.now() - start > timeoutMs) reject(new Error(`Timed out waiting for ${url}`))
+        else setTimeout(tryConnect, 300)
+      }
       const req = http.get(url, (res) => {
-        resolve()
+        res.resume()
+        if (res.statusCode >= 200 && res.statusCode < 300) resolve()
+        else retry()
       })
-      req.on('error', () => {
-        if (Date.now() - start > timeoutMs) {
-          reject(new Error(`Timed out waiting for ${url}`))
-        } else {
-          setTimeout(tryConnect, 300)
-        }
-      })
-      req.setTimeout(1200, () => {
-        req.destroy()
-        if (Date.now() - start > timeoutMs) {
-          reject(new Error(`Timed out waiting for ${url}`))
-        } else {
-          setTimeout(tryConnect, 300)
-        }
-      })
+      req.once('error', retry)
+      req.setTimeout(1200, () => req.destroy(new Error('Request timed out')))
     }
     tryConnect()
   })
@@ -101,6 +97,17 @@ async function main() {
     env: { ...process.env, PORT: String(backendPort) }
   })
 
+  const backendFailed = new Promise((_, reject) => {
+    backend.once('error', reject)
+    backend.once('exit', (code) => reject(new Error(`Workspace backend exited before startup completed (code ${code}).`)))
+  })
+  try {
+    await Promise.race([backendFailed, waitForHttp(`http://127.0.0.1:${backendPort}/api/workspace`, 10000)])
+  } catch (error) {
+    backend.kill()
+    throw error
+  }
+
   const frontend = spawn(npmCmd, ['run', 'dev'], {
     cwd: FRONTEND_DIR,
     env: { ...process.env, AETHER_BACKEND_PORT: String(backendPort), AETHER_FRONTEND_PORT: String(frontendPort) },
@@ -108,7 +115,7 @@ async function main() {
     shell: isWin
   })
 
-  function cleanup() {
+  function cleanup(exitCode = 0) {
     if (isCleaningUp) return
     isCleaningUp = true
     console.log('\n[studio] Shutting down servers...')
@@ -142,15 +149,16 @@ async function main() {
       }
     } catch {}
 
-    process.exit(0)
+    process.exit(exitCode)
   }
 
-  process.on('SIGINT', cleanup)
-  process.on('SIGTERM', cleanup)
+  process.on('SIGINT', () => cleanup())
+  process.on('SIGTERM', () => cleanup())
 
   backend.on('close', (code) => {
-    if (code !== 0 && code !== null && !isCleaningUp) {
-      console.error(`[backend] exited with code ${code}`)
+    if (!isCleaningUp) {
+      console.error(`[backend] Workspace server stopped (code ${code}). Restart Aether to continue.`)
+      cleanup(1)
     }
   })
 
@@ -163,7 +171,7 @@ async function main() {
   if (!noElectron) {
     try {
       // Wait for frontend Vite dev server to be responsive
-      await waitForHttp(`http://127.0.0.1:${frontendPort}`, 20000)
+      await waitForHttp(`http://127.0.0.1:${frontendPort}/api/workspace`, 20000)
       console.log('[studio] Frontend server is ready. Launching Electron window...')
 
       const electronBin = (() => {

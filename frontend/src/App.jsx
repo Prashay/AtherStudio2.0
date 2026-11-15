@@ -499,7 +499,24 @@ function TreeNode({ node, depth, active, onOpen, openDirs, toggleDir, loadDirect
 }
 
 export default function App() {
+  const [pulseMode, setPulseMode] = useState(null)
+  const topbarRef = useRef(null)
+  const pulseBridge = window.electronAPI?.pulse
+
+  useEffect(() => pulseBridge?.onMode(setPulseMode), [pulseBridge])
+
+  useEffect(() => {
+    if (!pulseBridge || !topbarRef.current) return
+    const topbar = topbarRef.current
+    const updateBounds = () => pulseBridge.setTop(topbar.getBoundingClientRect().bottom)
+    const observer = new ResizeObserver(updateBounds)
+    observer.observe(topbar)
+    updateBounds()
+    return () => observer.disconnect()
+  }, [pulseBridge])
+
   const [mode, setMode] = useState(() => {
+    if (pulseBridge) return 'editor'
     try {
       const param = new URLSearchParams(window.location.search).get('mode')
       if (param === 'agent' || param === 'editor') return param
@@ -520,6 +537,7 @@ export default function App() {
   const [revealPath, setRevealPath] = useState(null)
   const [launchTarget, setLaunchTarget] = useState('')
   const [launchCatalog, setLaunchCatalog] = useState({ applications: [], jdks: [] })
+  const [launchCatalogError, setLaunchCatalogError] = useState('')
   const [runLaunch, setRunLaunch] = useState(0)
   const [javaBreakpoints, setJavaBreakpoints] = useState({})
   const [menuOpen, setMenuOpen] = useState(false)
@@ -701,9 +719,14 @@ export default function App() {
   const [welcomeModalOpen, setWelcomeModalOpen] = useState(() => {
     try {
       if (new URLSearchParams(window.location.search).get('welcome') === 'true') return true
+      if (pulseBridge) return localStorage.getItem(WELCOME_SEEN_KEY) !== '1'
     } catch {}
     return false
   })
+  const dismissWelcome = () => {
+    try { localStorage.setItem(WELCOME_SEEN_KEY, '1') } catch {}
+    setWelcomeModalOpen(false)
+  }
   const [nameDraft, setNameDraft] = useState(() => localStorage.getItem(USER_KEY) || '')
   const [listening, setListening] = useState(false)
   const [msgMenuIdx, setMsgMenuIdx] = useState(null)
@@ -1543,6 +1566,10 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
   }
 
   const openLocalFolder = async () => {
+    if (window.electronAPI?.openFolderDialog) {
+      await openFolderPicker()
+      return
+    }
     if (!isNativeFSSupported()) {
       importFiles(folderInputRef)
       return
@@ -1621,7 +1648,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       setFolderPath(data.path)
     } catch {
       if (request === browseRequest.current) {
-        setBrowseErr('The workspace server could not be reached. You can still choose or import a folder.')
+        setBrowseErr('The workspace server could not be reached. Restart Aether, then use the project’s absolute path to enable Java Run and Debug.')
       }
     }
   }
@@ -1794,15 +1821,26 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     setLaunchTarget('')
     setLaunchRequest(null)
     setLaunchCatalog({ applications: [], jdks: [] })
+    setLaunchCatalogError('')
   }, [workspace.root])
 
   useEffect(() => {
     if (!workspace.root || webDirHandle || virtualFiles || !tree) return
     const controller = new AbortController()
-    fetch('/api/maven/applications', { signal: controller.signal })
-      .then((response) => response.ok ? response.json() : null)
+    fetch('/api/maven/applications?project=' + encodeURIComponent(workspace.root), { signal: controller.signal, cache: 'no-store' })
+      .then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.error || 'Could not load Java main classes.')
+        return data
+      })
       .then((data) => { if (data && !controller.signal.aborted) setLaunchCatalog(data) })
-      .catch(() => {})
+      .then(() => { if (!controller.signal.aborted) setLaunchCatalogError('') })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setLaunchCatalog({ applications: [], jdks: [] })
+          setLaunchCatalogError(error instanceof SyntaxError ? 'Java discovery API unavailable. Restart Aether.' : error.message)
+        }
+      })
     return () => controller.abort()
   }, [workspace.root, webDirHandle, virtualFiles, tree])
 
@@ -2040,6 +2078,10 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         openFolderPicker()
       } else if (action === 'save') {
         if (current) saveFile()
+      } else if (action === 'run-java' || action === 'debug-java') {
+        const target = launchCatalog.applications.find((item) => item.path === active)
+        if (target) void executeApplication(action === 'debug-java', target)
+        else setEditorNotice('Open a runnable Java file first.')
       } else if (action === 'search-everywhere') {
         setSearchEverywhere(true)
       } else if (action === 'find-file') {
@@ -2047,7 +2089,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       }
     })
     return cleanup
-  }, [current, saveFile, canCreateInProject])
+  }, [current, saveFile, canCreateInProject, active, launchCatalog, executeApplication])
 
   // Multi-platform desktop & web window controls (macOS left traffic lights vs Windows right buttons)
   const isElectron = Boolean(window.electronAPI?.isElectron)
@@ -2271,6 +2313,8 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       ['Open Project…', openFolderPicker],
       ['Browse Server Workspace…', openFolderPicker],
       ['Save', current ? saveFile : null],
+      ['Run Java File', activeMain ? () => executeApplication(false, activeMain) : null],
+      ['Debug Java File', activeMain ? () => executeApplication(true, activeMain) : null],
       ['Close Project', workspace.root ? () => closeProject() : null],
       ['Settings…', () => setSettingsOpen(true)]
     ],
@@ -2331,6 +2375,10 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         </div>)}
       </div>}
       <header
+        ref={topbarRef}
+        onClickCapture={(event) => {
+          if (pulseMode && !event.target.closest('.modes, .window-controls-win, .window-controls-mac')) pulseBridge.select(null)
+        }}
         className={`topbar ${isMac ? 'platform-mac' : 'platform-win'} ${isElectron ? 'is-electron' : 'is-web'}`}
         onDoubleClick={(e) => {
           if (e.target === e.currentTarget || e.target.classList.contains('topbar')) {
@@ -2403,17 +2451,23 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             ))}
           </div>
         </details>
-        <div className="modes">
-          <button aria-pressed={mode === 'agent'} className={mode === 'agent' ? 'on' : ''} onClick={() => { switchMode('agent'); }}>Agent</button>
-          <button aria-pressed={mode === 'editor'} className={mode === 'editor' ? 'on' : ''} onClick={() => { switchMode('editor'); }}>IDE</button>
+        <div className="modes" role="group" aria-label="Workspace views">
+          <button aria-pressed={!pulseMode && mode === 'editor'} className={!pulseMode && mode === 'editor' ? 'on' : ''} onClick={() => { pulseBridge?.select(null); switchMode('editor') }}>IDE</button>
+          <button aria-pressed={!pulseMode && mode === 'agent'} className={!pulseMode && mode === 'agent' ? 'on' : ''} onClick={() => { pulseBridge?.select(null); switchMode('agent') }}>Agent</button>
+          {pulseBridge && (
+            <>
+              <button aria-pressed={pulseMode === 'studio'} className={pulseMode === 'studio' ? 'on' : ''} onClick={() => pulseBridge.select('studio')}>Studio</button>
+              <button aria-pressed={pulseMode === 'dashboard'} className={pulseMode === 'dashboard' ? 'on' : ''} onClick={() => pulseBridge.select('dashboard')}>Dashboard</button>
+            </>
+          )}
         </div>
         <div className="top-actions">
           {mode !== 'chat' && <><button className="ghost maven-toggle" aria-pressed={mavenOpen} onClick={toggleMaven}>Maven</button><div className="launch-selector">
-            <select aria-label="Run configuration" value={selectedLaunch?.path || ''} onChange={(event) => {
+            <select aria-label="Run configuration" title={launchCatalogError || (webDirHandle || virtualFiles ? 'Use Open Project with the absolute folder path to enable Java Run and Debug.' : undefined)} value={selectedLaunch?.path || ''} onChange={(event) => {
               if (event.target.value === ':configure') showRun()
               else setLaunchTarget(event.target.value)
             }}>
-              {!selectedLaunch && <option value="">No run configuration</option>}
+              {!selectedLaunch && <option value="">{webDirHandle || virtualFiles ? 'Open workspace to run Java' : launchCatalogError ? 'Java discovery unavailable' : 'No main class found'}</option>}
               {launchCatalog.applications.map((item) => <option key={item.path} value={item.path}>{item.className.split('.').at(-1)}</option>)}
               <option value=":configure">Edit Configurations…</option>
             </select>
@@ -2735,7 +2789,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             </div>)}
           </div>}
           <div className="project-import-actions">
-            <button className="ghost tiny workbench-icon-button" aria-label="Import Folder" title="Import Folder" onClick={() => importFiles(folderInputRef)}><WorkbenchIcon name="folder" /></button>
+            <button className="ghost tiny workbench-icon-button" aria-label="Import Folder" title="Import Folder" onClick={() => window.electronAPI?.openFolderDialog ? openFolderPicker() : importFiles(folderInputRef)}><WorkbenchIcon name="folder" /></button>
             <button className="ghost tiny workbench-icon-button" aria-label="Import Files" title="Import Files" onClick={() => importFiles(filesInputRef)}><WorkbenchIcon name="files" /></button>
             <button className="ghost tiny workbench-icon-button" aria-label="Server Browser" title="Server Browser" onClick={openFolderPicker}><WorkbenchIcon name="server" /></button>
           </div>
@@ -3533,7 +3587,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               ) : (
                 <div className="workbench-home">
                   <div className="workbench-symbol" aria-hidden="true">{mode === 'agent' ? '✦' : '⌘'}</div>
-                  <h2>{mode === 'agent' ? 'Workspace agent' : workspace.name || 'Your workspace'}</h2>
+                  <h2>{mode === 'agent' ? 'Workspace agent' : workspace.name || 'Welcome to Ather Studio'}</h2>
                   <p>{mode === 'agent'
                     ? 'Describe a task in the Agent panel. Review proposed files here before saving.'
                     : workspace.root ? 'Choose a file in the explorer to start editing.' : 'Open a project folder to browse, search, and edit your files.'}</p>
@@ -4307,7 +4361,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             <div className="vault-actions project-folder-actions">
               <button className="ghost" onClick={() => { if (!openingFolder) setFolderOpen(false) }}>Cancel</button>
               <button className="ghost" onClick={openLocalFolder} disabled={openingFolder}>Choose Folder…</button>
-              {isNativeFSSupported() && <button className="ghost" onClick={() => importFiles(folderInputRef)} disabled={openingFolder}>Import Folder…</button>}
+              {isNativeFSSupported() && <button className="ghost" onClick={() => window.electronAPI?.openFolderDialog ? openFolderPicker() : importFiles(folderInputRef)} disabled={openingFolder}>Import Folder…</button>}
               <button className="primary" onClick={() => void selectFolder()} disabled={!folderPath.trim() || openingFolder}>
                 {openingFolder ? 'Opening…' : 'Use this folder'}
               </button>
@@ -4584,12 +4638,12 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       )}
 
       {welcomeModalOpen && (
-        <div className="modal-back apple-welcome-back" onClick={() => setWelcomeModalOpen(false)}>
+        <div className="modal-back apple-welcome-back" onClick={dismissWelcome}>
           <div className="modal apple-welcome-card" onClick={(e) => e.stopPropagation()}>
             <button
               type="button"
               className="settings-close-btn welcome-close-btn"
-              onClick={() => setWelcomeModalOpen(false)}
+              onClick={dismissWelcome}
               title="Close"
               style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}
             >
@@ -4598,7 +4652,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             <div className="sheet-handle" />
             <div className="apple-badge">
               <span className="apple-badge-sparkle">✦</span>
-              <span>Aether AI Studio</span>
+              <span>Ather Studio</span>
             </div>
 
             <div className="welcome-orb-wrap">
@@ -4606,7 +4660,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             </div>
 
             <div className="apple-welcome-content">
-              <h3>{userName ? `Hi, ${userName}` : 'Welcome to Aether Studio'}</h3>
+              <h3>{userName ? `Hi, ${userName}` : 'Welcome to Ather Studio'}</h3>
               <p>
                 Experience next-generation intelligent coding. Tell us what to call you, or jump right in.
               </p>
@@ -4617,8 +4671,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                   const trimmed = nameDraft.trim()
                   setUserName(trimmed)
                   if (trimmed) localStorage.setItem(USER_KEY, trimmed)
-                  localStorage.setItem(WELCOME_SEEN_KEY, '1')
-                  setWelcomeModalOpen(false)
+                  dismissWelcome()
                 }}
               >
                 <div className="apple-input-wrap">
@@ -4646,10 +4699,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                   <button
                     type="button"
                     className="ghost apple-skip-btn"
-                    onClick={() => {
-                      localStorage.setItem(WELCOME_SEEN_KEY, '1')
-                      setWelcomeModalOpen(false)
-                    }}
+                    onClick={dismissWelcome}
                   >
                     Skip
                   </button>
