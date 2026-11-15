@@ -1256,7 +1256,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
   useEffect(() => {
     const restore = new AbortController()
     workspaceRestore.current = restore
-    void loadWorkspace(restore.signal)
+    if (!webPulse) void loadWorkspace(restore.signal)
     fetch('/api/models').then((r) => r.json()).then((d) => {
       if (d.free && d.premium) setCatalog(d)
     }).catch(() => {})
@@ -1617,7 +1617,8 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       setFolderOpen(false)
     } catch (error) {
       if (error.name !== 'AbortError') {
-        setBrowseErr('The browser could not access that folder. Enter its path or import a copy.')
+        if (webPulse) setImportNotice('The browser could not access that folder. Try importing a copy.')
+        else setBrowseErr('The browser could not access that folder. Enter its path or import a copy.')
         setLeftOpen(true)
         if (window.innerWidth <= 860) setPane('files')
       }
@@ -1663,7 +1664,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     setDirty({})
     setHits([])
     setSearch('')
-    fetch('/api/workspace', { method: 'DELETE' }).catch(() => {})
+    if (!webPulse) fetch('/api/workspace', { method: 'DELETE' }).catch(() => {})
   }
 
   const loadBrowse = async (dir) => {
@@ -1688,6 +1689,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
   }
 
   const openFolderPicker = async () => {
+    if (webPulse) return openLocalFolder()
     if (window.electronAPI?.openFolderDialog) {
       try {
         const res = await window.electronAPI.openFolderDialog()
@@ -1708,6 +1710,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
   }
 
   const selectFolder = async (requested = folderPath) => {
+    if (webPulse) return openLocalFolder()
     const path = requested.trim()
     if (!path || openingFolder || !canLeaveWorkspace()) return
     workspaceRestore.current?.abort()
@@ -1883,6 +1886,10 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     || launchCatalog.applications[0]
 
   const showRun = () => {
+    if (webPulse) {
+      setImportNotice('Java Run and Debug require the Ather Studio desktop app.')
+      return
+    }
     setRunLaunch((previous) => previous + 1)
   }
 
@@ -1922,7 +1929,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     }
   }
   const executeApplication = async (debug, target = selectedLaunch) => {
-    if (!target) {
+    if (webPulse || !target) {
       showRun()
       return
     }
@@ -2473,8 +2480,8 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           <summary title={workspace.root || 'Switch project'}><span>{workspace.name || 'Open Project'}</span><span className="project-switcher-chevron" aria-hidden="true" /></summary>
           <div>
             <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; openFolderPicker() }}>Open Project…</button>
-            {recentProjects.length > 0 && <strong>Recent Projects</strong>}
-            {recentProjects.map((item) => (
+            {!webPulse && recentProjects.length > 0 && <strong>Recent Projects</strong>}
+            {!webPulse && recentProjects.map((item) => (
               <button type="button" key={item.root} onClick={(event) => {
                 event.currentTarget.closest('details').open = false
                 setFolderPath(item.root)
@@ -2497,7 +2504,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         </div>
         <div className="top-actions">
           {mode !== 'chat' && <><button className="ghost maven-toggle" aria-pressed={mavenOpen} onClick={toggleMaven}>Maven</button><div className="launch-selector">
-            <select aria-label="Run configuration" title={launchCatalogError || (webDirHandle || virtualFiles ? 'Use Open Project with the absolute folder path to enable Java Run and Debug.' : undefined)} value={selectedLaunch?.path || ''} onChange={(event) => {
+            <select aria-label="Run configuration" title={webPulse ? 'Java Run and Debug require the Ather Studio desktop app.' : launchCatalogError || (webDirHandle || virtualFiles ? 'Use Open Project with the absolute folder path to enable Java Run and Debug.' : undefined)} value={selectedLaunch?.path || ''} onChange={(event) => {
               if (event.target.value === ':configure') showRun()
               else setLaunchTarget(event.target.value)
             }}>
