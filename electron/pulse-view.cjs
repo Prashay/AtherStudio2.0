@@ -5,7 +5,8 @@ const fs = require('node:fs')
 const registerPulseServices = require('./pulse-services.cjs')
 
 const pulseRoot = path.join(__dirname, '..', 'pulse')
-const rendererUrl = pathToFileURL(path.join(pulseRoot, 'dist', 'index.html')).href
+const rendererFile = path.join(pulseRoot, 'dist', 'index.html')
+const rendererUrl = pathToFileURL(rendererFile).href
 let workspace
 let mockServer
 
@@ -101,15 +102,21 @@ exports.attach = (window) => {
   })
   view.webContents.on('did-start-loading', () => { workspace.rendererReady = false })
 
+  const showLoadError = (message) => {
+    if (view.webContents.isDestroyed()) return
+    return view.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
+      '<body style="background:#090d16;color:white;font:16px sans-serif;padding:24px">' + message + '</body>'
+    )).catch(() => {})
+  }
+
+  if (!fs.existsSync(rendererFile)) {
+    console.error('[Pulse] Renderer build is missing:', rendererFile)
+    return showLoadError(app.isPackaged
+      ? 'This package is missing the Pulse workspace. Reinstall the complete desktop app.'
+      : 'Run npm start from the repository root to prepare the Pulse workspace.')
+  }
   return view.webContents.loadURL(rendererUrl).catch((error) => {
     console.error('[Pulse] Failed to load workspace:', error.message)
-    const message = fs.existsSync(path.join(pulseRoot, 'dist', 'index.html'))
-      ? 'Pulse could not start.'
-      : 'Run npm run build:pulse to build the Pulse workspace.'
-    if (!view.webContents.isDestroyed()) {
-      return view.webContents.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
-        '<body style="background:#090d16;color:white;font:16px sans-serif;padding:24px">' + message + '</body>'
-      )).catch(() => {})
-    }
+    return showLoadError('Pulse could not start.')
   })
 }

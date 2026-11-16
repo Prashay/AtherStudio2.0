@@ -7,14 +7,16 @@ const http = require('http')
 const ROOT = __dirname
 const BACKEND_DIR = path.join(ROOT, 'backend')
 const FRONTEND_DIR = path.join(ROOT, 'frontend')
+const PULSE_DIR = path.join(ROOT, 'pulse')
 
 const isWin = process.platform === 'win32'
 const npmCmd = isWin ? 'npm.cmd' : 'npm'
 
-function runCommandSync(cmd, args, cwd) {
+function runSetup(cmd, args, cwd) {
   return new Promise((resolve, reject) => {
     console.log(`[setup] Running ${cmd} ${args.join(' ')} in ${path.relative(ROOT, cwd) || '.'}...`)
     const child = spawn(cmd, args, { cwd, stdio: 'inherit', shell: isWin })
+    child.once('error', reject)
     child.on('close', (code) => {
       if (code === 0) resolve()
       else reject(new Error(`Command ${cmd} exited with code ${code}`))
@@ -22,19 +24,20 @@ function runCommandSync(cmd, args, cwd) {
   })
 }
 
-async function ensureInstalled() {
-  const backendModules = path.join(BACKEND_DIR, 'node_modules')
-  const frontendModules = path.join(FRONTEND_DIR, 'node_modules')
-
-  if (!fs.existsSync(backendModules)) {
-    console.log('[setup] Installing backend dependencies...')
-    await runCommandSync(npmCmd, ['install'], BACKEND_DIR)
+async function ensureInstalled(desktop) {
+  const install = (directory) => runSetup(npmCmd, ['ci', '--no-audit', '--no-fund', '--fetch-retries=1', '--fetch-timeout=30000'], directory)
+  const jobs = []
+  if (!fs.existsSync(path.join(BACKEND_DIR, 'node_modules', 'express', 'package.json'))) jobs.push(install(BACKEND_DIR))
+  if (!fs.existsSync(path.join(FRONTEND_DIR, 'node_modules', 'vite', 'package.json'))) jobs.push(install(FRONTEND_DIR))
+  if (desktop && !fs.existsSync(path.join(PULSE_DIR, 'dist', 'index.html'))) {
+    jobs.push((async () => {
+      if (!fs.existsSync(path.join(PULSE_DIR, 'node_modules', 'vite', 'package.json'))) await install(PULSE_DIR)
+      await runSetup(npmCmd, ['run', 'build'], PULSE_DIR)
+    })())
   }
-
-  if (!fs.existsSync(frontendModules)) {
-    console.log('[setup] Installing frontend dependencies...')
-    await runCommandSync(npmCmd, ['install'], FRONTEND_DIR)
-  }
+  const results = await Promise.allSettled(jobs)
+  const failed = results.find((result) => result.status === 'rejected')
+  if (failed) throw failed.reason
 }
 
 function checkPort(port) {
@@ -77,13 +80,21 @@ async function main() {
     throw new Error('Set two different valid ports for AETHER_FRONTEND_PORT and AETHER_BACKEND_PORT.')
   }
   await Promise.all([checkPort(frontendPort), checkPort(backendPort)])
-  await ensureInstalled()
+  let electronBin
+  if (!noElectron) {
+    try { electronBin = require('electron') } catch {}
+    if (!electronBin || !fs.existsSync(electronBin)) {
+      electronBin = null
+      console.warn('[electron] Desktop runtime missing. Complete npm install, then run npm start again. Starting in the browser for now.')
+    }
+  }
+  await ensureInstalled(Boolean(electronBin))
 
   console.log('\n==================================================')
-  console.log('  🚀 Starting Aether Studio' + (noElectron ? ' (Web Mode)...' : ' (Electron Desktop)...'))
+  console.log('  🚀 Starting Aether Studio' + (electronBin ? ' (Electron Desktop)...' : ' (Web Mode)...'))
   console.log(`  • App (Frontend) : http://localhost:${frontendPort}`)
   console.log(`  • API (Backend)  : http://localhost:${backendPort}`)
-  if (!noElectron) {
+  if (electronBin) {
     console.log('  • Desktop Shell  : Launching Electron window...')
   }
   console.log('==================================================\n')
@@ -91,7 +102,7 @@ async function main() {
   let electronProcess = null
   let isCleaningUp = false
 
-  const backend = spawn('node', ['server.js'], {
+  const backend = spawn(process.execPath, ['server.js'], {
     cwd: BACKEND_DIR,
     stdio: 'inherit',
     env: { ...process.env, PORT: String(backendPort) }
@@ -168,24 +179,16 @@ async function main() {
     }
   })
 
-  if (!noElectron) {
+  if (electronBin) {
     try {
       // Wait for frontend Vite dev server to be responsive
       await waitForHttp(`http://127.0.0.1:${frontendPort}/api/workspace`, 20000)
       console.log('[studio] Frontend server is ready. Launching Electron window...')
 
-      const electronBin = (() => {
-        try {
-          return require('electron')
-        } catch {
-          return null
-        }
-      })()
-
       const mainScript = path.join(ROOT, 'electron', 'main.cjs')
       const electronEnv = {
         ...process.env,
-        VITE_DEV_SERVER_URL: `http://localhost:${frontendPort}`,
+        VITE_DEV_SERVER_URL: `http://127.0.0.1:${frontendPort}`,
         AETHER_FRONTEND_PORT: String(frontendPort),
         AETHER_BACKEND_PORT: String(backendPort)
       }
@@ -197,7 +200,10 @@ async function main() {
           env: electronEnv
         })
 
+        let launchFailed = false
         electronProcess.on('error', (err) => {
+          launchFailed = true
+          console.warn(`[electron] Open http://localhost:${frontendPort} to continue in your browser.`)
           console.warn(`\n[electron] Notice: Could not launch Electron desktop process: ${err.message}`)
           if (isWin && (err.code === 'UNKNOWN' || String(err.message).includes('blocked'))) {
             console.warn('[electron] Note: On Windows with Smart App Control (SAC) enabled, unsigned dev binaries in node_modules may be blocked by Windows policy.')
@@ -206,6 +212,10 @@ async function main() {
         })
 
         electronProcess.on('close', (code) => {
+          if (launchFailed || code !== 0) {
+            console.warn(`[electron] Desktop exited before closing normally. Browser remains available at http://localhost:${frontendPort}.`)
+            return
+          }
           console.log('\n[electron] Electron window closed.')
           cleanup()
         })

@@ -39,26 +39,25 @@ You can run Ather Studio as an **Electron desktop application** or as a **web ap
 ## ⚡ Quick Start
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) (v18 or newer recommended, tested on v24.x)
+- [Node.js](https://nodejs.org/) 22.12 or newer
 - npm (v9 or newer)
 
 ---
 
-### 1. Install & Run in One Step
+### 1. Install and start
 
-You can start the entire application (both backend and frontend) directly using Node.js:
+From the repository root on macOS, Windows, or Linux:
 
-```bash
-node start.js
-```
-
-Or using `npm`:
-
-```bash
+```sh
+npm ci --foreground-scripts
 npm start
 ```
 
-> **Note:** `start.js` automatically checks and installs any missing dependencies for both `backend` and `frontend` before launching.
+The first command downloads the Electron runtime for your system. The first desktop launch installs the missing workspace dependencies and builds Pulse. The terminal shows each setup step. Later launches reuse those files.
+
+If the desktop window cannot launch, open **http://localhost:4576** once the terminal says the browser is available. To start in a browser directly, use `npm run dev:web`. Developer Tools are closed by default. Set `AETHER_DEVTOOLS=true` when you want them.
+
+For a Mac user who only wants to use the app, share a packaged DMG built for their Mac with `npm run electron:build:mac:arm64` for Apple Silicon or `npm run electron:build:mac:x64` for Intel Macs. The packaged app includes Electron.
 
 #### On Windows:
 - Double-click `start.bat` or run:

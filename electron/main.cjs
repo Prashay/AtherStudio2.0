@@ -15,7 +15,7 @@ if (process.platform === 'darwin') {
 const frontendPort = Number(process.env.AETHER_FRONTEND_PORT || 4576)
 const backendPort = Number(process.env.AETHER_BACKEND_PORT || 3090)
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
-const DEV_URL = process.env.VITE_DEV_SERVER_URL || `http://localhost:${frontendPort}`
+const DEV_URL = process.env.VITE_DEV_SERVER_URL || `http://127.0.0.1:${frontendPort}`
 const PROD_URL = `http://127.0.0.1:${backendPort}`
 
 let mainWindow = null
@@ -347,7 +347,7 @@ async function loadAppUrl(window) {
     console.log(`[Electron] Connecting to frontend dev server at ${DEV_URL}`)
     try {
       await window.loadURL(DEV_URL)
-      if (isDev || process.env.AETHER_DEVTOOLS === 'true') {
+      if (process.env.AETHER_DEVTOOLS === 'true') {
         window.webContents.openDevTools({ mode: 'detach' })
       }
       return
