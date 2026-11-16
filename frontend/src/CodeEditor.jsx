@@ -1,3 +1,4 @@
+import { debuggerValues } from './debuggerValues.js'
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { javaHighlight } from './javaHighlight.js'
 import { getJavaHint } from './javaHints.js'
@@ -20,6 +21,7 @@ export default function CodeEditor({
   onDebugMain,
   workspace,
   breakpointLines = [],
+  debugLocation,
   onToggleBreakpoint,
   className = '',
   outline = [],
@@ -280,6 +282,21 @@ export default function CodeEditor({
       highlight.current.scrollLeft = field.scrollLeft
     }
   }
+
+  const debugLine = debugLocation?.line
+  const debugCondition = debugLine ? debuggerValues(debugLocation.variables, rawLines[debugLine - 1]).condition : undefined
+  useEffect(() => {
+    if (!debugLine || !editor.current || !highlight.current) return
+    const row = highlight.current.querySelector('[data-source-line="' + debugLine + '"]')
+    if (!row) return
+    const field = editor.current
+    const viewport = field.getBoundingClientRect()
+    const top = row.getBoundingClientRect().top
+    if (top < viewport.top + 12 || top > viewport.bottom - 30) {
+      field.scrollTop += top - viewport.top - field.clientHeight / 3
+      syncScroll(field)
+    }
+  }, [debugLine, visibleLines])
 
   // Jump to offset
   const jumpToOffset = useCallback((offset, len = 0) => {
@@ -969,8 +986,11 @@ export default function CodeEditor({
           {highlighted && (
             <pre ref={highlight} className={`java-highlight ${wordWrap ? 'wrap' : ''}`} aria-hidden="true">
               {highlighted.map((tokens, line) => (
-                <span key={line} data-source-line={visibleLines[line]?.isFolded ? undefined : visibleLines[line]?.realLine} className={`java-source-line ${breakpoints.has(visibleLines[line]?.realLine) ? 'java-breakpoint-line' : ''}`}>
+                <span key={line} data-source-line={visibleLines[line]?.isFolded ? undefined : visibleLines[line]?.realLine} className={`java-source-line ${breakpoints.has(visibleLines[line]?.realLine) ? 'java-breakpoint-line' : ''} ${debugLine === visibleLines[line]?.realLine ? 'java-execution-line' : ''}`}>
                   {tokens.length ? renderJavaTokens(tokens, visibleLines[line]) : '\u200b'}
+                  {debugLine === visibleLines[line]?.realLine && debugLocation?.variables?.length > 0 && (
+                    <span className="java-execution-values">{[...(debugCondition === undefined ? [] : ['= ' + debugCondition]), ...debugLocation.variables.slice(0, 4).map(({ name, value }) => name + ' = ' + value)].join('   ')}</span>
+                  )}
                 </span>
               ))}
             </pre>

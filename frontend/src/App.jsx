@@ -623,6 +623,7 @@ export default function App() {
   const [mavenOptions, setMavenOptions] = useState({ offline: false, skipTests: false })
   const [structureOpen, setStructureOpen] = useState(false)
   const [editorJump, setEditorJump] = useState(null)
+  const [debugLocation, setDebugLocation] = useState(null)
   const [mavenOpen, setMavenOpen] = useState(false)
   const [searchEverywhere, setSearchEverywhere] = useState(false)
   const lastShift = useRef(0)
@@ -1946,6 +1947,15 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
   }
   const outline = useMemo(() => fileOutline(current?.path, current?.content), [current])
   const [editorFolds, setEditorFolds] = useState(new Set())
+  const debugPath = debugLocation?.path
+  const debugLine = debugLocation?.line
+  const openDebugFile = useRef(openFile)
+  openDebugFile.current = openFile
+  useEffect(() => {
+    if (!debugPath || !debugLine) return
+    setEditorFolds(new Set())
+    void openDebugFile.current(debugPath)
+  }, [debugPath, debugLine])
   const [structureFilter, setStructureFilter] = useState('')
 
   useEffect(() => {
@@ -3586,6 +3596,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     </div>
                   ) : (
                     <CodeEditor
+                      debugLocation={debugLocation?.path === current.path ? debugLocation : null}
                       breakpointLines={projectBreakpoints[current.path]}
                       onToggleBreakpoint={toggleBreakpoint}
                       jump={editorJump}
@@ -4154,7 +4165,9 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         selectedApplication={selectedLaunch?.path}
         onSelectApplication={setLaunchTarget}
         launch={runLaunch}
-        onStartDebug={() => { setTerminalOpen(false); setMavenOpen(true) }}
+        debugSourceLine={debugLocation ? tabs.find((tab) => tab.path === debugLocation.path)?.content.split('\n')[debugLocation.line - 1] : ''}
+        onDebugLocation={setDebugLocation}
+        onStartApplication={() => { setTerminalOpen(false); setMavenOpen(true) }}
         launchRequest={launchRequest}
         onLaunchHandled={setLaunchRequest}
         options={mavenOptions}

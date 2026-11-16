@@ -8123,3 +8123,92 @@ body.resizing-col * {
 .java-method-fixes .java-reference-actions { align-items: center; }
 .java-method-fixes a { color: inherit; text-decoration: underline; }
 .java-method-fixes code { flex-basis: 100%; overflow-wrap: anywhere; margin-bottom: 5px; }
+
+.java-run-config-dialog {
+  width: min(1184px, calc(100vw - 32px));
+  height: min(690px, calc(100dvh - 32px));
+  color: #d1d5df;
+  background: #191a1c;
+  border-color: #383b40;
+  border-radius: 8px;
+  font: 13px/1.45 system-ui, sans-serif;
+}
+.java-run-config-dialog[open] { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.java-run-config-dialog header, .java-run-config-dialog footer { padding: 8px 14px; }
+.java-run-config-dialog .java-config-body { grid-template-columns: minmax(155px, 30%) minmax(0, 1fr); min-height: 0; }
+.java-run-config-dialog .java-config-tree { padding: 12px; }
+.java-config-tree strong { display: block; padding: 3px 5px; }
+.java-run-config-dialog .java-config-tree button { margin: 1px 0; padding: 4px 10px 4px 26px; background: transparent; border-color: transparent; }
+.java-run-config-dialog .java-config-tree button[aria-pressed="true"] { background: #2e426b; border-color: transparent; }
+.java-run-config-dialog .java-config-fields { overflow: auto; align-content: start; gap: 16px; padding: 18px; }
+.java-run-config-dialog .java-config-section { display: grid; align-content: start; gap: 12px; border-top: 1px solid #383b40; }
+.java-config-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 10px; }
+.java-config-runtime { display: grid; grid-template-columns: minmax(120px, 40%) minmax(0, 1fr); gap: 8px; }
+.java-config-runtime span { color: #a8afbd; }
+.java-config-options { position: relative; color: #8bb7ff; }
+.java-config-options summary { cursor: pointer; }
+.java-config-options > div { position: absolute; z-index: 1; right: 0; min-width: 190px; padding: 6px; color: #d1d5df; background: #282a2e; border: 1px solid #42464d; box-shadow: 0 6px 24px #0007; border-radius: 6px; }
+.java-run-config-dialog .java-config-options label { padding: 5px 7px; }
+.java-run-config-dialog .java-config-row { grid-template-columns: minmax(112px, 150px) minmax(0, 1fr); align-items: start; }
+.java-run-config-dialog .java-config-row textarea { min-height: 32px; }
+.java-config-debugger { display: grid; gap: 10px; }
+.java-config-launch { display: flex; gap: 3px; margin-right: 8px; }
+.java-run-config-dialog :is(button, select, input:not([type="checkbox"]), textarea) { background: #25262a; border-color: #454850; border-radius: 4px; }
+.java-run-config-dialog button.primary { background: #3572df; border-color: #3572df; color: #fff; min-width: 70px; }
+@media (max-width: 620px) {
+  .java-run-config-dialog .java-config-body { grid-template-columns: minmax(94px, 25%) minmax(0, 1fr); }
+  .java-run-config-dialog .java-config-row, .java-config-runtime { grid-template-columns: 1fr; }
+  .java-run-config-dialog .java-config-fields { padding: 10px; }
+}
+
+.java-source-line.java-execution-line { background: #294d858f; }
+.java-execution-values { position: absolute; margin-inline-start: 16px; color: #aebed5; opacity: .78; font-style: italic; }
+.java-debug-inspector { display: grid; grid-template-columns: minmax(150px, 18%) minmax(0, 1fr); width: 100%; min-height: 0; font-size: 12px; }
+.java-debug-frames, .java-debug-variables { overflow: auto; min-height: 0; min-width: 0; }
+.java-debug-frames { border-right: 1px solid var(--line, #ffffff20); }
+.java-debug-strip { position: sticky; top: 0; padding: 7px 10px; background: var(--panel-2, #33363b); color: var(--paper, #e0e5ee); }
+.java-debug-frames button { display: block; width: calc(100% - 12px); margin: 3px 6px; padding: 4px 8px; text-align: left; color: inherit; background: transparent; border: 0; border-radius: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.java-debug-frames button[aria-pressed="true"] { background: #35476b; color: #f1f5ff; }
+.java-debug-frames small { opacity: .7; }
+.java-debug-inspector p { padding: 0 10px; }
+.java-debug-variables dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 12px; margin: 8px 12px; }
+.java-debug-variables dt { color: #e5ae85; }
+.java-debug-variables dd { margin: 0; font-family: monospace; overflow-wrap: anywhere; }
+.java-debug-toolbar [role="tab"][aria-selected="true"] { background: #35476b; color: #f1f5ff; }
+
+.app.intellij-workbench .java-debug-toolbar .java-debug-icon {
+  --debug-button-color: #b6c3d8;
+  color: var(--debug-button-color);
+  border-color: color-mix(in srgb, var(--debug-button-color) 26%, transparent);
+  background: color-mix(in srgb, var(--debug-button-color) 10%, transparent);
+  backdrop-filter: blur(8px);
+}
+.app.intellij-workbench .java-debug-toolbar .java-debug-icon[aria-label="Rerun"] { --debug-button-color: #87c99f; }
+.app.intellij-workbench .java-debug-toolbar .java-debug-icon[aria-label="Stop"] { --debug-button-color: #f08686; }
+.app.intellij-workbench .java-debug-toolbar .java-debug-icon[aria-label="Resume Program"] { --debug-button-color: #73d5a0; }
+.app.intellij-workbench .java-debug-toolbar .java-debug-icon[aria-label="Step Over"] { --debug-button-color: #89b5ff; }
+.app.intellij-workbench .java-debug-toolbar .java-debug-icon[aria-label="Step Into"] { --debug-button-color: #78d6e2; }
+.app.intellij-workbench .java-debug-toolbar .java-debug-icon[aria-label="Step Out"] { --debug-button-color: #bd9cf5; }
+.app.intellij-workbench .java-debug-toolbar .java-debug-icon[aria-label="View Breakpoints"] { --debug-button-color: #ed9f85; }
+.app.intellij-workbench .java-debug-toolbar .java-debug-icon[aria-label="Mute Breakpoints"] { --debug-button-color: #edbb78; }
+.app.intellij-workbench .java-debug-toolbar .java-debug-icon:hover:not(:disabled),
+.app.intellij-workbench .java-debug-toolbar .java-debug-icon[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--debug-button-color) 24%, transparent);
+}
+.app.intellij-workbench .java-debug-toolbar .java-debug-icon:disabled { opacity: .42; }
+.java-debug-evaluate { display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: var(--panel-2, #33363b); }
+.java-debug-evaluate input { flex: 1; min-width: 0; color: inherit; font: inherit; padding: 4px; background: transparent; border: 0; }
+.java-debug-evaluation { margin: 4px 10px; padding: 5px; white-space: pre-wrap; }
+
+.java-debug-value-list { padding: 6px 10px; }
+.java-debug-value-row { display: flex; align-items: baseline; gap: 8px; padding: 3px 5px; border-radius: 4px; }
+.java-debug-value-row:hover, .java-debug-value-row:focus-within { background: #799ae019; }
+.java-debug-value-row code { min-width: 0; overflow-wrap: anywhere; }
+.java-debug-value-row code span { color: #e5ae85; }
+.java-debug-value-row > button { margin-inline-start: auto; }
+.java-debug-comparison { padding: 5px 10px; border-block-start: 1px solid var(--line); background: var(--panel-2, #25272d); }
+.java-debug-comparison header, .java-debug-comparison > div { display: flex; align-items: baseline; gap: 10px; }
+.java-debug-comparison header > button { margin-inline-start: auto; }
+.java-debug-comparison section { flex: 1; min-width: 0; padding-top: 6px; }
+.java-debug-comparison pre { margin: 3px 0; padding: 5px; max-height: 90px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.maven-panel.java-debug-panel:has(.java-debug-comparison) { grid-template-rows: auto auto minmax(0, 1fr) auto auto; }

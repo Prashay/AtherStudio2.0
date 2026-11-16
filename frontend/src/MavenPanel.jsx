@@ -1,9 +1,12 @@
+import { debuggerValues } from './debuggerValues.js'
 import TreeIcon from './TreeIcon.jsx'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 const goals = ['clean', 'validate', 'compile', 'test', 'package', 'verify', 'install', 'site', 'clean install', 'compiler:compile', 'jar:jar', '--version']
-const defaults = { javaHome: '', environment: '', debugPort: 5005, suspend: true }
+const defaults = { name: '', javaHome: '', environment: '', programArguments: '', vmOptions: '', workingDirectory: '', redirectInput: '', consoleOutput: '', debugPort: 5005, suspend: true }
+const optionFields = [['vmOptions', 'Add VM options'], ['redirectInput', 'Redirect input'], ['consoleOutput', 'Save console output to file'], ['debugger', 'Debugger settings']]
+const argumentLines = (value) => value.split(/\r?\n/).filter((arg) => arg.length > 0)
 
 function usePoms(tree) {
   return useMemo(() => {
@@ -146,7 +149,7 @@ export function MavenLifecycle({ tree, project, onRun, onReload, onOpenPom, opti
   </div>
 }
 
-export default function MavenPanel({ project, tree, visible, onHide, applications, jdks, breakpointsByFile = {}, selectedApplication, onSelectApplication, launch, launchRequest, onLaunchHandled, onStartDebug, terminal, onToggleTerminal, options, setOptions }) {
+export default function MavenPanel({ project, tree, visible, onHide, applications, jdks, breakpointsByFile = {}, selectedApplication, onSelectApplication, launch, launchRequest, onLaunchHandled, onStartApplication, onDebugLocation, debugSourceLine, terminal, onToggleTerminal, options, setOptions }) {
   const poms = usePoms(tree)
   const configKey = 'aether.runConfigurations:' + project
   const [configs, setConfigs] = useState(() => {
@@ -155,6 +158,8 @@ export default function MavenPanel({ project, tree, visible, onHide, application
   const [editing, setEditing] = useState(false)
   const [drafts, setDrafts] = useState({})
   const [configError, setConfigError] = useState('')
+  const [visibleOptions, setVisibleOptions] = useState({})
+  const [launchMode, setLaunchMode] = useState('debug')
   const dialog = useRef(null)
   const lastConfigLaunch = useRef(launch)
   const [command, setCommand] = useState('')
@@ -162,13 +167,19 @@ export default function MavenPanel({ project, tree, visible, onHide, application
   const [goal, setGoal] = useState('compile')
   const [trusted, setTrusted] = useState(false)
   const [status, setStatus] = useState('Ready')
+  const [activeRun, setActiveRun] = useState(null)
+  const [stoppingRun, setStoppingRun] = useState(false)
   const [output, setOutput] = useState('')
   const [session, setSession] = useState('')
   const [debugView, setDebugView] = useState('console')
   const [debugTarget, setDebugTarget] = useState(null)
   const [running, setRunning] = useState(false)
   const [debugState, setDebugState] = useState({ paused: false, muted: false })
-  const [inspection, setInspection] = useState('')
+  const [inspection, setInspection] = useState(null)
+  const [expression, setExpression] = useState('')
+  const [evaluation, setEvaluation] = useState(null)
+  const [watches, setWatches] = useState([])
+  const [comparison, setComparison] = useState(null)
   const [showBreakpoints, setShowBreakpoints] = useState(false)
   const request = useRef(null)
   const consoleRef = useRef(null)
@@ -184,13 +195,14 @@ export default function MavenPanel({ project, tree, visible, onHide, application
     setDrafts({})
     setConfigError('')
   }
-  function saveConfiguration() {
+  function saveConfiguration(close = true) {
     const next = { ...configs, [target.path]: config }
     try {
       localStorage.setItem(configKey, JSON.stringify(next))
       setConfigs(next)
       setStatus('Configuration saved for ' + target.className)
-      closeConfiguration()
+      if (close) closeConfiguration()
+      else setDrafts((previous) => ({ ...previous, [target.path]: undefined }))
       return true
     } catch {
       setConfigError('Could not save configuration in this browser.')
@@ -231,12 +243,14 @@ export default function MavenPanel({ project, tree, visible, onHide, application
     if (!project || (applicationRun ? !runTarget : !runPom) || request.current) return
     setSession(debug ? 'Debug' : applicationRun ? 'Run' : 'Build')
     setOutput('')
+    setEvaluation(null)
+    setComparison(null)
     if (debug) {
       setDebugView('console')
       const lines = breakpointsByFile[runTarget.path] || []
       setDebugTarget({ application: runTarget.path, name: runTarget.className, lines })
       setDebugState((previous) => ({ muted: previous.muted, paused: false }))
-      setInspection('')
+      setInspection(null)
       setShowBreakpoints(false)
       setStatus('Preparing debug session…')
     }
@@ -262,6 +276,7 @@ export default function MavenPanel({ project, tree, visible, onHide, application
       }
       setTrusted(true)
     }
+    setActiveRun(null)
     const controller = new AbortController()
     request.current = controller
     let startupTimedOut = false
@@ -294,11 +309,15 @@ export default function MavenPanel({ project, tree, visible, onHide, application
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Aether-Build': 'maven' },
         body: JSON.stringify({ project, pom: runPom, goal: goalToRun, ...options, application: runTarget?.path,
-          configuration: applicationRun ? { javaHome: runConfig.javaHome, variables: Object.fromEntries(variables), debug, debugPort: Number(runConfig.debugPort), suspend: runConfig.suspend, breakpoints: breakpointsByFile[runTarget.path], muted: debugState.muted } : undefined }),
+          configuration: applicationRun ? {
+            arguments: argumentLines(runConfig.programArguments), vmOptions: argumentLines(runConfig.vmOptions).map((option) => option.trim()),
+            workingDirectory: runConfig.workingDirectory.trim(), redirectInput: runConfig.redirectInput.trim(), consoleOutput: runConfig.consoleOutput.trim(),
+            javaHome: runConfig.javaHome, variables: Object.fromEntries(variables), debug, debugPort: Number(runConfig.debugPort), suspend: runConfig.suspend, breakpoints: breakpointsByFile[runTarget.path], muted: debugState.muted } : undefined }),
         signal: controller.signal
       })
       if (!response.ok || !response.headers.get('content-type')?.includes('application/x-ndjson')) {
         const error = await response.json().catch(() => ({}))
+        if (response.status === 409 && error.activeRun) setActiveRun(error.activeRun)
         throw new Error(error.error || (applicationRun
           ? 'The Java runner is unavailable. Restart Aether from the current checkout.'
           : 'The local Maven backend is unavailable.'))
@@ -319,12 +338,15 @@ export default function MavenPanel({ project, tree, visible, onHide, application
             if (event.id) clearTimeout(startupTimer)
             setDebugState((previous) => ({ ...previous, ...event }))
             if (event.id !== null) setStatus(event.paused ? 'Paused' : 'Running')
-            if (!event.paused) setInspection('')
+            if (!event.paused) { setInspection(null); setEvaluation(null) }
+            else if (event.atLocation) setDebugView('threads')
           }
-          if (event.type === 'debug-inspection') setInspection((previous) => (previous + event.text).slice(-32000))
+          if (event.type === 'debug-inspection') setInspection(event)
+          if (event.type === 'debug-evaluation') setEvaluation(event.text)
           if (event.type === 'debug-error') append(event.message + '\n')
           if (event.type === 'exit') {
             finished = true
+            if (debug) { setInspection(null); setDebugView('console') }
             setStatus(event.code === 0 ? 'Finished successfully' : `Failed (exit ${event.code ?? 'unknown'})`)
           }
         }
@@ -335,6 +357,7 @@ export default function MavenPanel({ project, tree, visible, onHide, application
     } catch (error) {
       if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
       flushOutput()
+      if (debug) { setInspection(null); setDebugView('console') }
       setStatus(startupTimedOut ? 'Debugger connection timed out' : controller.signal.aborted ? 'Stopped' : 'Failed')
       if (startupTimedOut) append('The backend did not report a debugger connection. Restart Aether and try Debug again.\n')
       else if (!controller.signal.aborted) append(error.message + '\n')
@@ -346,6 +369,32 @@ export default function MavenPanel({ project, tree, visible, onHide, application
       setRunning(false)
     }
   }
+
+  const stopActiveRun = async () => {
+    setStoppingRun(true)
+    try {
+      const response = await fetch('/api/maven/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Aether-Build': 'maven' },
+        body: JSON.stringify({ id: activeRun.id }),
+      })
+      if (response.status === 404) setStatus('Previous run already ended. Try Run again.')
+      else if (!response.ok) throw new Error('Could not stop the previous run.')
+      else setStatus('Stop requested. Try Run again once the previous process exits.')
+      setActiveRun(null)
+    } catch (error) {
+      setStatus(error.message)
+    } finally {
+      setStoppingRun(false)
+    }
+  }
+  const previousRun = activeRun && (
+    <div className="maven-status" role="status">
+      {activeRun.application || activeRun.goal} is running in {activeRun.project}
+      {activeRun.pid && <span> (PID {activeRun.pid})</span>}
+      <button type="button" className="ghost tiny" disabled={stoppingRun} onClick={stopActiveRun}>Stop previous run</button>
+    </div>
+  )
 
   const validConfig = Boolean(target) && /^\d+$/.test(String(config.debugPort))
     && Number(config.debugPort) >= 1024 && Number(config.debugPort) <= 65535
@@ -368,7 +417,14 @@ export default function MavenPanel({ project, tree, visible, onHide, application
     })
     return () => controller.abort()
   }, [running, debugState.id, debugTarget, activeBreakpointLines])
-  async function debugAction(action) {
+  useEffect(() => {
+    const frame = inspection?.frames?.[inspection.selectedFrame]
+    onDebugLocation?.(running && debugState.paused && frame?.application && frame.line
+      ? { path: frame.application, line: frame.line, variables: inspection.variables }
+      : null)
+  }, [debugState.paused, inspection, onDebugLocation, running])
+
+  async function debugAction(action, frame, input) {
     if (action === 'mute' && !running) {
       setDebugState((previous) => ({ ...previous, muted: !previous.muted }))
       return
@@ -377,13 +433,24 @@ export default function MavenPanel({ project, tree, visible, onHide, application
       const response = await fetch('/api/java/debug/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Aether-Build': 'maven' },
-        body: JSON.stringify({ id: debugState.id, action })
+        body: JSON.stringify({ id: debugState.id, action, frame, expression: input })
       })
       if (!response.ok) throw new Error((await response.json()).error)
-    } catch (error) { setStatus(error.message || 'Debugger command failed') }
+    } catch (error) {
+      if (action === 'evaluate') setEvaluation('Use a variable, field, or array element in a paused frame.')
+      else setStatus(error.message || 'Debugger command failed')
+    }
   }
   const canResume = running && debugState.paused && Boolean(debugState.id)
   const canStep = canResume && debugState.atLocation
+  const details = debuggerValues(inspection?.variables, debugSourceLine, inspection ? watches : [])
+  const compareValue = async (name, value) => {
+    try {
+      setComparison({ name, value, clipboard: await navigator.clipboard.readText() })
+    } catch {
+      setStatus('Could not read the clipboard.')
+    }
+  }
   return <>{showDebug ? <section className="maven-panel java-debug-panel" aria-label="Java Debug" hidden={!visible}>
     <header className="java-debug-header">
       <strong>Debug</strong>
@@ -411,13 +478,65 @@ export default function MavenPanel({ project, tree, visible, onHide, application
     </div>
     <div className="java-debug-content">
       {debugView === 'console' ? <pre ref={consoleRef} role="tabpanel" aria-label="Debug console" tabIndex={0}>{output}</pre>
-        : <pre role="tabpanel" aria-label="Threads and variables" tabIndex={0}>{inspection || 'Pause at a breakpoint to inspect threads, frames, and local variables.'}</pre>}
+        : <div role="tabpanel" className="java-debug-inspector" aria-label="Threads and variables">
+          <div className="java-debug-frames">
+            <div className="java-debug-strip">{inspection?.thread ? inspection.thread + ' · Paused' : running ? 'Running' : 'Session ended'}</div>
+            {inspection?.frames?.length ? inspection.frames.map((frame, index) => (
+              <button key={index} type="button" aria-pressed={inspection.selectedFrame === index}
+                title={frame.method} onClick={() => void debugAction('frame', index)}>
+                {frame.method.split('.').at(-1)}{frame.line ? ':' + frame.line : ''} <small>{frame.file}</small>
+              </button>
+            )) : <p>Frames are unavailable.</p>}
+          </div>
+          <div className="java-debug-variables">
+            <form className="java-debug-evaluate" onSubmit={(event) => {
+              event.preventDefault()
+              if (canStep && expression.trim()) void debugAction('evaluate', undefined, expression.trim())
+            }}>
+              <input aria-label="Evaluate expression" placeholder="Evaluate expression (Enter)" value={expression}
+                disabled={!canStep} onChange={(event) => setExpression(event.target.value)} />
+              <button type="submit" className="ghost tiny" disabled={!canStep || !expression.trim()}>Evaluate</button>
+              <button type="button" className="ghost tiny" disabled={!canStep || !expression.trim()} onClick={() => {
+                const name = expression.replace(/\s/g, '')
+                setWatches((previous) => previous.includes(name) ? previous : [...previous, name])
+              }}>Add watch</button>
+            </form>
+            {evaluation && <pre className="java-debug-evaluation" role="status">{evaluation}</pre>}
+            {inspection && (inspection.variables?.length || details.watches.length) ? (
+              <div className="java-debug-value-list">
+                {[
+                  ...inspection.variables.map((item) => ({ ...item, kind: 'local' })),
+                  ...details.derived.filter(({ name }) => !watches.includes(name)).map((item) => ({ ...item, kind: 'derived' })),
+                  ...details.watches.map((item) => ({ ...item, kind: 'watch' })),
+                ].map(({ name, value, kind }) => (
+                  <div className="java-debug-value-row" key={kind + ':' + name}>
+                    <code><span>{name}</span> = {value}</code>
+                    {kind === 'watch' && <button type="button" className="ghost tiny" title="Remove watch" aria-label={'Remove watch ' + name}
+                      onClick={() => setWatches((previous) => previous.filter((item) => item !== name))}>×</button>}
+                    <button type="button" className="ghost tiny" onClick={() => void compareValue(name, value)}>Compare with clipboard</button>
+                  </div>
+                ))}
+              </div>
+            ) : <p>{inspection ? 'No variables in this frame.' : 'Pause to inspect variables.'}</p>}
+          </div>
+        </div>}
       {showBreakpoints && <aside className="java-debug-detail" aria-label="Breakpoints">
         <strong>Breakpoints{debugState.muted ? ' (muted)' : ''}</strong>
         {activeBreakpointLines?.length ? <ul>{activeBreakpointLines.map((line) => <li key={line}>{debugTarget.name}:{line}</li>)}</ul> : <p>No breakpoints for this class.</p>}
       </aside>}
     </div>
+    {comparison && (
+      <div className="java-debug-comparison" role="region" aria-label="Clipboard vs Selected Value">
+        <header><strong>Clipboard vs {comparison.name}</strong>
+          <span>{comparison.clipboard === comparison.value ? 'Values match' : 'Values differ'}</span>
+          <button type="button" className="ghost tiny" onClick={() => setComparison(null)}>Close</button>
+        </header>
+        <div><section><strong>From clipboard</strong><pre>{comparison.clipboard}</pre></section>
+          <section><strong>Selected value</strong><pre>{comparison.value}</pre></section></div>
+      </div>
+    )}
     <div className="maven-status" role="status">{status}</div>
+    {previousRun}
   </section> : <section className={`maven-panel ${terminal ? 'has-run-configuration' : ''}`} aria-label="Maven build tool window" hidden={!visible}>
     <div className="maven-toolbar">
       <strong>{terminal ? 'Maven Terminal' : session || (goal === 'application' ? 'Run / Debug' : 'Build')}</strong>
@@ -460,40 +579,71 @@ export default function MavenPanel({ project, tree, visible, onHide, application
     </form> : null}
     <pre ref={consoleRef} aria-label={goal === 'application' ? 'Program output' : 'Maven output'} tabIndex={0}>{goal === 'application' ? output : output || (project ? 'Select a Maven goal or Java application.' : 'Open a project through Server Browser to run Maven.')}</pre>
     <div className="maven-status" role="status">{status}</div>
+    {previousRun}
   </section>}
-  {editing && createPortal(<dialog ref={dialog} className="java-config-dialog" aria-labelledby="java-config-title" onCancel={(event) => { event.preventDefault(); closeConfiguration() }}>
+  {editing && createPortal(<dialog ref={dialog} className="java-config-dialog java-run-config-dialog" aria-labelledby="java-config-title" onCancel={(event) => { event.preventDefault(); closeConfiguration() }}>
     <header><strong id="java-config-title">Run/Debug Configurations</strong><button type="button" onClick={closeConfiguration} aria-label="Close configuration">×</button></header>
     <div className="java-config-body">
-      <aside aria-label="Applications">Applications
-        {applications.map((item) => <button key={item.path} type="button" title={item.className} aria-pressed={target?.path === item.path} onClick={() => onSelectApplication(item.path)}>{item.className.split('.').at(-1)}</button>)}
+      <aside aria-label="Applications" className="java-config-tree">
+        <strong>⌄ Application</strong>
+        {applications.map((item) => <button key={item.path} type="button" title={item.className} aria-pressed={target?.path === item.path}
+          onClick={() => onSelectApplication(item.path)}>{configs[item.path]?.name || item.className.split('.').at(-1)}</button>)}
       </aside>
       {target ? <div className="java-config-fields">
-      <label>Main class<input readOnly value={target.className} /></label>
-      <label>JDK<select value={config.javaHome} onChange={(event) => update('javaHome', event.target.value)} disabled={running}>
-        <option value="">System default</option>
-        {jdks.map(({ home, label }) => <option key={home} value={home}>{label} · {home}</option>)}
-      </select></label>
-      <label>Debugger port<input type="number" min="1024" max="65535" value={config.debugPort} onChange={(event) => update('debugPort', event.target.value)} disabled={running} /></label>
-      <label><input type="checkbox" checked={config.suspend} onChange={(event) => update('suspend', event.target.checked)} disabled={running} /> Wait for Resume when there are no breakpoints</label>
-      {breakpointLines.length > 0 && <div className="java-breakpoint-commands">
-        <strong>Breakpoints in this class</strong>
-        <pre>{breakpointLines.join(', ')}</pre>
-      </div>}
-      <label>Environment variables<textarea placeholder="SPRING_PROFILES_ACTIVE=dev" value={config.environment} onChange={(event) => update('environment', event.target.value)} disabled={running} /></label>
-      {!validConfig && <small role="status">Use a port from 1024 to 65535 and enter one NAME=value per line.</small>}
+        <label className="java-config-row">Name<input value={config.name} placeholder={target.className.split('.').at(-1)} onChange={(event) => update('name', event.target.value)} /></label>
+        <section className="java-config-section">
+          <div className="java-config-section-heading">
+            <strong>Build and run</strong>
+            <details className="java-config-options">
+              <summary>Modify options</summary>
+              <div aria-label="Run options">
+                {optionFields.map(([key, label]) => <label key={key}>
+                  <input type="checkbox" checked={visibleOptions[key] ?? Boolean(config[key])} onChange={(event) => {
+                    setVisibleOptions({ ...visibleOptions, [key]: event.target.checked })
+                    if (!event.target.checked && key !== 'debugger') update(key, '')
+                  }} />{label}
+                </label>)}
+              </div>
+            </details>
+          </div>
+          <div className="java-config-runtime">
+            <label><span>JDK</span><select value={config.javaHome} onChange={(event) => update('javaHome', event.target.value)}>
+              <option value="">System default</option>
+              {jdks.map(({ home, label }) => <option key={home} value={home}>{label} · {home}</option>)}
+            </select></label>
+            <label><span>Main class</span><input readOnly value={target.className} /></label>
+          </div>
+          <label className="java-config-row">Program arguments<textarea placeholder="One argument per line" value={config.programArguments} onChange={(event) => update('programArguments', event.target.value)} /></label>
+          <label className="java-config-row">Working directory<input placeholder={target.pom ? "Maven module directory (default)" : project} value={config.workingDirectory} onChange={(event) => update('workingDirectory', event.target.value)} /></label>
+          <label className="java-config-row">Environment variables<textarea placeholder="NAME=value, one per line" value={config.environment} onChange={(event) => update('environment', event.target.value)} /></label>
+          {(visibleOptions.vmOptions ?? Boolean(config.vmOptions)) && <label className="java-config-row">VM options<textarea placeholder="-Xmx512m (one option per line)" value={config.vmOptions} onChange={(event) => update('vmOptions', event.target.value)} /></label>}
+          {(visibleOptions.redirectInput ?? Boolean(config.redirectInput)) && <label className="java-config-row">Redirect input<input placeholder="Path to a file in the project" value={config.redirectInput} onChange={(event) => update('redirectInput', event.target.value)} /></label>}
+          {(visibleOptions.consoleOutput ?? Boolean(config.consoleOutput)) && <label className="java-config-row">Save console output<input placeholder="Path to a new .log file in the project" value={config.consoleOutput} onChange={(event) => update('consoleOutput', event.target.value)} /></label>}
+          {visibleOptions.debugger && <div className="java-config-debugger">
+            <label className="java-config-row">Debugger port<input type="number" min="1024" max="65535" value={config.debugPort} onChange={(event) => update('debugPort', event.target.value)} /></label>
+            <label><input type="checkbox" checked={config.suspend} onChange={(event) => update('suspend', event.target.checked)} /> Wait for Resume when there are no breakpoints</label>
+          </div>}
+        </section>
+        {breakpointLines.length > 0 && <p>Breakpoints in this class · {breakpointLines.join(', ')}</p>}
+        {!validConfig && <small role="status">Use a port from 1024 to 65535 and enter one NAME=value per line.</small>}
       </div> : <p>Open a server workspace with a Java main class to configure it.</p>}
     </div>
     <footer>
       {configError && <small role="alert">{configError}</small>}
-      <button type="button" onClick={() => setDrafts((previous) => ({ ...previous, [target.path]: defaults }))} disabled={!target || running}>Reset</button>
+      <div className="java-config-launch">
+        <button type="button" onClick={() => {
+          if (!saveConfiguration()) return
+          onStartApplication()
+          setGoal('application')
+          void run(launchMode === 'debug', 'application', undefined, target.path, config)
+        }} disabled={!validConfig || running}>{launchMode === 'debug' ? 'Debug' : 'Run'}</button>
+        <select aria-label="Launch mode" value={launchMode} onChange={(event) => setLaunchMode(event.target.value)}>
+          <option value="run">Run</option><option value="debug">Debug</option>
+        </select>
+      </div>
+      <button type="button" className="primary" onClick={() => saveConfiguration()} disabled={!validConfig || running}>OK</button>
       <button type="button" onClick={closeConfiguration}>Cancel</button>
-      <button type="button" className="primary" onClick={saveConfiguration} disabled={!validConfig || running}>Save</button>
-      <button type="button" className="primary" onClick={() => {
-        if (!saveConfiguration()) return
-        onStartDebug()
-        setGoal('application')
-        void run(true, 'application', undefined, target.path, config)
-      }} disabled={!validConfig || running}>Start Debug</button>
+      <button type="button" onClick={() => saveConfiguration(false)} disabled={!validConfig || running || !drafts[target?.path]}>Apply</button>
     </footer>
   </dialog>, document.body)}</>
 }
