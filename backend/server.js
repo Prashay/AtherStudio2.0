@@ -1,5 +1,6 @@
 const { mountMaven } = require('./maven')
 const { mountJavaValidation } = require('./javaValidation')
+const { mountJavaFormat } = require('./javaFormat')
 const express = require('express')
 const cors = require('cors')
 const fs = require('fs')
@@ -590,6 +591,7 @@ app.post('/api/chat', async (req, res) => {
 
 mountMaven(app, { root, safeJoin })
 mountJavaValidation(app, { root })
+mountJavaFormat(app)
 
 const distCandidates = [
   path.join(__dirname, '..', 'frontend', 'dist'),

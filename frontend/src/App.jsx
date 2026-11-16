@@ -2038,6 +2038,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
   const canCreateInProject = Boolean(workspace.root && !webDirHandle && !virtualFiles)
   const parentFolder = (file = '') => file.split('/').slice(0, -1).join('/')
   const createProjectItem = async (kind, directory, extension = '', template = () => '') => {
+    const openedWorkspace = workspaceRef.current
     let input = null
     if (window.electronAPI?.prompt) {
       input = await window.electronAPI.prompt({
@@ -2048,7 +2049,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     } else {
       input = window.prompt(`New ${kind} name`)
     }
-    if (input === null || input === undefined) return
+    if (input === null || input === undefined || workspaceRef.current !== openedWorkspace) return
     let name = input.trim()
     if (!name || /[<>:"/\\|?*]/.test(name) || /[. ]$/.test(name) ||
       (kind === 'Java Class' && !/^[A-Za-z_$][\w$]*(?:\.java)?$/.test(name))) {
@@ -2058,22 +2059,14 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     if (extension && !name.toLowerCase().endsWith(extension)) name += extension
     const path = [directory, name].filter(Boolean).join('/')
     const folder = kind === 'Directory'
-    const openedWorkspace = workspaceRef.current
     try {
-      if (window.electronAPI && (folder ? window.electronAPI.createDirectory : window.electronAPI.createFile)) {
-        const res = folder
-          ? await window.electronAPI.createDirectory(path)
-          : await window.electronAPI.createFile(path, template(name, directory))
-        if (!res.ok) throw new Error(res.error || (res.code === 'EEXIST' ? 'That name already exists.' : 'Could not create item.'))
-      } else {
-        const response = await fetch(folder ? '/api/mkdir' : '/api/file', {
-          method: folder ? 'POST' : 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path, createOnly: true, content: template(name, directory) })
-        })
-        const data = await response.json()
-        if (!response.ok) throw new Error(response.status === 409 ? 'That name already exists.' : data.error)
-      }
+      const response = await fetch(folder ? '/api/mkdir' : '/api/file', {
+        method: folder ? 'POST' : 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path, createOnly: true, content: template(name, directory) })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(response.status === 409 ? 'That name already exists.' : data.error)
       if (workspaceRef.current !== openedWorkspace) return
       await reloadMavenTree()
       if (workspaceRef.current !== openedWorkspace) return
