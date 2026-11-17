@@ -43,18 +43,35 @@ function discoverApplications(workspace) {
   return applications
 }
 
+function parseJavaMajor(versionText = '') {
+  const clean = String(versionText).trim().replace(/^["']|["']$/g, '')
+  const parts = clean.split(/[._+-]/)
+  const first = parseInt(parts[0], 10)
+  if (first === 1 && parts[1]) return parseInt(parts[1], 10) || 0
+  return first || 0
+}
+
 function findJdks() {
   const homes = new Set()
   if (process.env.JAVA_HOME) homes.add(path.resolve(process.env.JAVA_HOME))
   const programFiles = process.env.ProgramFiles
-  const directories = process.platform === 'win32' && programFiles
-    ? ['Java', 'Eclipse Adoptium', 'Microsoft', 'Amazon Corretto'].map((vendor) => path.join(programFiles, vendor))
+  const programFilesX86 = process.env['ProgramFiles(x86)']
+  const localAppData = process.env.LOCALAPPDATA
+  const userHome = os.homedir()
+  const winRoots = [programFiles, programFilesX86, localAppData ? path.join(localAppData, 'Programs') : null].filter(Boolean)
+  const directories = process.platform === 'win32'
+    ? [
+        ...winRoots.flatMap((rootDir) => ['Java', 'Eclipse Adoptium', 'AdoptOpenJDK', 'Microsoft', 'Amazon Corretto', 'BellSoft', 'Zulu', 'SapMachine', 'GraalVM'].map((vendor) => path.join(rootDir, vendor))),
+        path.join(userHome, '.jdks'),
+        path.join(userHome, '.sdkman', 'candidates', 'java')
+      ]
     : process.platform === 'darwin'
-      ? ['/Library/Java/JavaVirtualMachines', path.join(os.homedir(), 'Library', 'Java', 'JavaVirtualMachines')]
-      : ['/usr/lib/jvm']
+      ? ['/Library/Java/JavaVirtualMachines', path.join(userHome, 'Library', 'Java', 'JavaVirtualMachines'), path.join(userHome, '.jdks'), path.join(userHome, '.sdkman', 'candidates', 'java')]
+      : ['/usr/lib/jvm', '/usr/java', path.join(userHome, '.jdks'), path.join(userHome, '.sdkman', 'candidates', 'java')]
   for (const directory of directories) {
     try {
       for (const entry of fs.readdirSync(directory)) {
+        if (entry === 'current' || entry === 'default') continue
         const entryPath = path.join(directory, entry)
         homes.add(process.platform === 'darwin' && entry.endsWith('.jdk')
           ? path.join(entryPath, 'Contents', 'Home') : entryPath)
@@ -62,15 +79,33 @@ function findJdks() {
     } catch {}
   }
   const executable = process.platform === 'win32' ? 'javac.exe' : 'javac'
+  const javaExec = process.platform === 'win32' ? 'java.exe' : 'java'
   return [...homes].flatMap((home) => {
-    if (!fs.existsSync(path.join(home, 'bin', executable))) return []
+    if (!fs.existsSync(path.join(home, 'bin', executable)) && !fs.existsSync(path.join(home, 'bin', javaExec))) return []
     try {
       const version = fs.readFileSync(path.join(home, 'release'), 'utf8').match(/^JAVA_VERSION="([^"]+)"/m)?.[1]
-      return [{ home, label: version ? `JDK ${version}` : path.basename(home) }]
+      const major = parseJavaMajor(version || path.basename(home).replace(/^[^\d]*/, ''))
+      return [{ home, version: version || '', major, label: version ? `JDK ${version}` : path.basename(home) }]
     } catch {
-      return [{ home, label: path.basename(home) }]
+      const major = parseJavaMajor(path.basename(home).replace(/^[^\d]*/, ''))
+      return [{ home, version: '', major, label: path.basename(home) }]
     }
-  })
+  }).sort((a, b) => (b.major || 0) - (a.major || 0))
+}
+
+function resolveJavaTool(toolName = 'java', minMajor = 17) {
+  const isWin = process.platform === 'win32'
+  const exe = isWin ? `${toolName}.exe` : toolName
+  const jdks = findJdks()
+  const matching = jdks.find((j) => (j.major || 0) >= minMajor && fs.existsSync(path.join(j.home, 'bin', exe)))
+  if (matching) return { bin: path.join(matching.home, 'bin', exe), home: matching.home, major: matching.major }
+  const anyJdk = jdks.find((j) => fs.existsSync(path.join(j.home, 'bin', exe)))
+  if (anyJdk) return { bin: path.join(anyJdk.home, 'bin', exe), home: anyJdk.home, major: anyJdk.major }
+  if (process.env.JAVA_HOME) {
+    const candidate = path.join(process.env.JAVA_HOME, 'bin', exe)
+    if (fs.existsSync(candidate)) return { bin: candidate, home: process.env.JAVA_HOME, major: 0 }
+  }
+  return { bin: toolName, home: process.env.JAVA_HOME || '', major: 0 }
 }
 
 function stopProcess(child) {
@@ -108,7 +143,7 @@ function mountMaven(app, { root, safeJoin }) {
     ({ id, goal, project, application, startedAt, pid })
   app.post('/api/maven/stop', (req, res) => {
     if (!localBuildRequest(req)) return res.sendStatus(403)
-    if (!active || active.id !== req.body?.id || active.origin !== req.get('origin')) {
+    if (!active || (req.body?.id && active.id !== req.body?.id) || active.origin !== req.get('origin')) {
       return res.status(404).json({ error: 'That run has already ended or belongs to a different session.' })
     }
     active.stop()
@@ -182,13 +217,22 @@ function mountMaven(app, { root, safeJoin }) {
         let jars = []
         try {
           jars = fs.readdirSync(output, { withFileTypes: true })
-            .filter((entry) => entry.isFile() && entry.name.endsWith('.jar'))
+            .filter((entry) => entry.isFile() && entry.name.endsWith('.jar') && !entry.name.endsWith('-sources.jar') && !entry.name.endsWith('-javadoc.jar'))
             .map((entry) => entry.name)
-          // Spring Boot's default repackage goal leaves the original jar beside the executable.
-          jars = jars.filter((name) => fs.existsSync(path.join(output, name + '.original')))
+          // Spring Boot's repackage goal leaves an original jar beside the executable
+          const repackaged = jars.filter((name) => fs.existsSync(path.join(output, name + '.original')))
+          if (repackaged.length > 0) {
+            jars = repackaged
+          }
         } catch {}
-        if (jars.length !== 1) {
-          return res.status(409).json({ error: 'Build this Spring Boot module explicitly from the Maven tool window or run mvn clean install. Run and Debug need one Spring Boot executable jar in target/.' })
+        if (jars.length === 0) {
+          return res.status(409).json({ error: 'Build this Spring Boot module explicitly from the Maven tool window (e.g. package or clean install). Run and Debug need an executable jar in target/.' })
+        }
+        // If multiple jars remain, sort by mtime descending to get the newest build
+        if (jars.length > 1) {
+          try {
+            jars.sort((a, b) => fs.statSync(path.join(output, b)).mtimeMs - fs.statSync(path.join(output, a)).mtimeMs)
+          } catch {}
         }
         springJar = path.join(output, jars[0])
       } else {
@@ -305,8 +349,18 @@ function mountMaven(app, { root, safeJoin }) {
     const validLines = (lines) => Array.isArray(lines)
       ? [...new Set(lines.filter((line) => Number.isSafeInteger(line) && line > 0))].slice(0, 200) : []
     function attach(command) {
-      let lines = validLines(configuration?.breakpoints)
-      const className = singleClass?.name || debugClass
+      // Multi-class breakpoint support: breakpointsByClass maps className -> [line numbers]
+      let breakpointsByClass = {}
+      const primaryClassName = singleClass?.name || debugClass
+      if (configuration?.breakpointsByClass && typeof configuration.breakpointsByClass === 'object') {
+        for (const [cls, bpLines] of Object.entries(configuration.breakpointsByClass)) {
+          breakpointsByClass[cls] = validLines(bpLines)
+        }
+      } else {
+        // Fallback: legacy single-class breakpoints
+        const legacyLines = validLines(configuration?.breakpoints)
+        if (legacyLines.length) breakpointsByClass[primaryClassName] = legacyLines
+      }
       let muted = configuration?.muted === true
       let paused = false
       let atLocation = false
@@ -333,7 +387,14 @@ function mountMaven(app, { root, safeJoin }) {
         arrayInFlight = null
       }
       const send = (commands) => debuggerProcess.stdin.write(commands.join('\n') + '\n')
-      const breakpointCommands = (verb) => lines.map((line) => `${verb} ${className}:${line}`)
+      const allBreakpointCommands = (verb) => {
+        const commands = []
+        for (const [cls, bpLines] of Object.entries(breakpointsByClass)) {
+          for (const line of bpLines) commands.push(`${verb} ${cls}:${line}`)
+        }
+        return commands
+      }
+      const hasAnyBreakpoints = () => Object.values(breakpointsByClass).some((arr) => arr.length > 0)
       debuggerProcess = spawn(command, ['-J-Duser.language=en', '-J-Duser.country=US', '-connect', `com.sun.jdi.SocketAttach:hostname=127.0.0.1,port=${debugAddress.split(':').at(-1)}`], { windowsHide: true, env })
       debuggerProcess.stdin.on('error', () => {})
       debuggerProcess.on('error', () => {
@@ -362,19 +423,46 @@ function mountMaven(app, { root, safeJoin }) {
           return true
         }
         if (action === 'breakpoints' && initialized) {
-          const next = validLines(breakpoints)
-          const commands = [
-            ...lines.filter((line) => !next.includes(line)).map((line) => `clear ${className}:${line}`),
-            ...next.filter((line) => !lines.includes(line)).map((line) => `stop at ${className}:${line}`)
-          ]
-          lines = next
-          if (!muted && commands.length) send(commands)
+          // Support multi-class breakpoint updates: breakpoints can be { className: [lines] }
+          if (breakpoints && typeof breakpoints === 'object' && !Array.isArray(breakpoints)) {
+            const commands = []
+            const nextByClass = {}
+            for (const [cls, bpLines] of Object.entries(breakpoints)) {
+              nextByClass[cls] = validLines(bpLines)
+            }
+            // Remove old breakpoints no longer present
+            for (const [cls, oldLines] of Object.entries(breakpointsByClass)) {
+              const newLines = nextByClass[cls] || []
+              for (const line of oldLines) {
+                if (!newLines.includes(line)) commands.push(`clear ${cls}:${line}`)
+              }
+            }
+            // Add new breakpoints
+            for (const [cls, newLines] of Object.entries(nextByClass)) {
+              const oldLines = breakpointsByClass[cls] || []
+              for (const line of newLines) {
+                if (!oldLines.includes(line)) commands.push(`stop at ${cls}:${line}`)
+              }
+            }
+            breakpointsByClass = nextByClass
+            if (!muted && commands.length) send(commands)
+          } else {
+            // Legacy single-class breakpoints
+            const next = validLines(breakpoints)
+            const oldLines = breakpointsByClass[primaryClassName] || []
+            const commands = [
+              ...oldLines.filter((line) => !next.includes(line)).map((line) => `clear ${primaryClassName}:${line}`),
+              ...next.filter((line) => !oldLines.includes(line)).map((line) => `stop at ${primaryClassName}:${line}`)
+            ]
+            breakpointsByClass[primaryClassName] = next
+            if (!muted && commands.length) send(commands)
+          }
           return true
         }
         if (!paused || (action !== 'resume' && action !== 'mute' && !atLocation)) return false
         if (action === 'mute') {
           muted = !muted
-          if (lines.length) send(breakpointCommands(muted ? 'clear' : 'stop at'))
+          if (hasAnyBreakpoints()) send(allBreakpointCommands(muted ? 'clear' : 'stop at'))
           emit({ type: 'debug-state', paused, muted })
         } else {
           inspectionPending = false
@@ -396,9 +484,14 @@ function mountMaven(app, { root, safeJoin }) {
           initialized = true
           emit({ type: 'output', text: 'Connected to the Java debugger at ' + debugAddress + '.\n' })
           clearTimeout(startupTimer)
-          const commands = muted ? [] : breakpointCommands('stop at')
-          if (configuration?.suspend === false || lines.length) commands.push('cont')
-          else paused = true
+          const commands = muted ? [] : allBreakpointCommands('stop at')
+          // Always send cont to start the application (Spring Boot needs this)
+          // unless user explicitly wants to stay suspended with no breakpoints
+          if (configuration?.suspend === false || hasAnyBreakpoints()) commands.push('cont')
+          else {
+            // Even with suspend=true and no breakpoints, send cont so the app actually starts
+            commands.push('cont')
+          }
           emit({ type: 'debug-state', id: debugId, paused, muted })
           if (commands.length) send(commands)
         } else if (/Breakpoint hit:|Step completed:|Exception occurred:/.test(report)) {
@@ -432,14 +525,24 @@ function mountMaven(app, { root, safeJoin }) {
           if (stack.length) frames = stack.map(([, , method, location]) => {
             const source = /^(.*):([\d,]+)$/.exec(location)
             const declaringType = method.slice(0, method.lastIndexOf('.')).split('$')[0]
-            let sourcePath = declaringType === className ? application : null
+            let sourcePath = declaringType === primaryClassName ? application : null
             if (!sourcePath && source && /^[\w.$]+$/.test(declaringType)) {
               const sourceRoot = singleClass?.sourceRoot || path.join(cwd, 'src', 'main', 'java')
-              try {
-                const candidate = fs.realpathSync(path.join(sourceRoot, ...declaringType.split('.')) + '.java')
-                const relative = path.relative(fs.realpathSync(project), candidate)
-                if (!path.isAbsolute(relative) && relative.split(path.sep)[0] !== '..') sourcePath = relative.split(path.sep).join('/')
-              } catch {}
+              // Try multiple source roots for multi-module projects
+              const sourceRoots = [sourceRoot]
+              // Also check common source directories
+              const altRoot = path.join(cwd, 'src', 'main', 'java')
+              if (!sourceRoots.includes(altRoot)) sourceRoots.push(altRoot)
+              for (const root of sourceRoots) {
+                try {
+                  const candidate = fs.realpathSync(path.join(root, ...declaringType.split('.')) + '.java')
+                  const relative = path.relative(fs.realpathSync(project), candidate)
+                  if (!path.isAbsolute(relative) && relative.split(path.sep)[0] !== '..') {
+                    sourcePath = relative.split(path.sep).join('/')
+                    break
+                  }
+                } catch {}
+              }
             }
             return { method, file: source?.[1] || '', line: source ? Number(source[2].replaceAll(',', '')) : null,
               application: sourcePath }
@@ -518,9 +621,9 @@ function mountMaven(app, { root, safeJoin }) {
       }
       run.pid = child.pid ?? null
       if (debuggerCommand) startupTimer = setTimeout(() => {
-        emit({ type: 'debug-error', message: 'The Java debugger did not connect within 15 seconds. Check the selected JDK and debugger port, then rerun.' })
+        emit({ type: 'debug-error', message: 'The Java debugger did not connect within 45 seconds. Check the selected JDK and debugger port, then rerun.' })
         stopProcess(child)
-      }, 15000)
+      }, 45000)
       for (const stream of [child.stdout, child.stderr]) {
         let startup = ''
         stream.setEncoding('utf8').on('data', (text) => {
@@ -563,4 +666,4 @@ function mountMaven(app, { root, safeJoin }) {
   app.post('/api/maven/run', (req, res) => run(req, res, false))
 }
 
-module.exports = { mountMaven }
+module.exports = { mountMaven, findJdks, resolveJavaTool }

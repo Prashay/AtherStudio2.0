@@ -573,3 +573,94 @@ function validateJavaScript(source) {
 
   return diagnostics
 }
+
+export function formatJsonSource(source = '') {
+  if (!source.trim()) return source
+  const newline = source.includes('\r\n') ? '\r\n' : '\n'
+  const parsed = JSON.parse(source)
+  const formatted = JSON.stringify(parsed, null, 2) + '\n'
+  return newline === '\r\n' ? formatted.replace(/\n/g, '\r\n') : formatted
+}
+
+export function formatYamlSource(source = '') {
+  const diagnostics = validateYaml(source)
+  const firstError = diagnostics.find((d) => d.severity === 'error' && !d.message.includes('prohibits tabs') && !d.message.includes('Missing space after colon'))
+  if (firstError) {
+    throw new Error(`Line ${firstError.line}: ${firstError.message}`)
+  }
+
+  const newline = source.includes('\r\n') ? '\r\n' : '\n'
+  const lines = source.replace(/\r\n?/g, '\n').split('\n')
+  const indentLevels = [0]
+  const out = []
+  let prevBlank = false
+  let inBlockScalar = false
+  let blockScalarBaseIndent = 0
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i].replace(/\t/g, '  ').replace(/[ \t]+$/, '')
+    const trimmed = rawLine.trim()
+
+    if (!trimmed) {
+      if (!prevBlank && out.length > 0) {
+        out.push('')
+        prevBlank = true
+      }
+      continue
+    }
+    prevBlank = false
+
+    const rawIndent = (rawLine.match(/^(\s*)/)?.[1] || '').length
+
+    if (inBlockScalar) {
+      if (rawIndent > blockScalarBaseIndent) {
+        out.push(rawLine)
+        continue
+      }
+      inBlockScalar = false
+    }
+
+    if (trimmed === '---' || trimmed === '...') {
+      indentLevels.length = 1
+      indentLevels[0] = 0
+      out.push(trimmed)
+      continue
+    }
+
+    if (trimmed.startsWith('#')) {
+      const currentDepth = Math.max(0, indentLevels.length - 1)
+      out.push('  '.repeat(currentDepth) + trimmed)
+      continue
+    }
+
+    while (indentLevels.length > 1 && rawIndent < indentLevels[indentLevels.length - 1]) {
+      indentLevels.pop()
+    }
+    if (rawIndent > indentLevels[indentLevels.length - 1]) {
+      indentLevels.push(rawIndent)
+    }
+
+    const depth = indentLevels.length - 1
+    let normalizedLine = trimmed
+
+    // Normalize `-item` or `key:value` spacing safely outside URLs
+    if (/^-[^\s-]/.test(normalizedLine)) {
+      normalizedLine = '- ' + normalizedLine.slice(1).trimStart()
+    }
+    normalizedLine = normalizedLine.replace(/^(-\s+)?([A-Za-z0-9_.-]+):([^\s\r\n#].*)$/, (match, listPrefix = '', key, rest) => {
+      if ((key === 'http' || key === 'https') && rest.startsWith('//')) return match
+      return `${listPrefix}${key}: ${rest}`
+    })
+
+    if (/[:>-]\s*[|>][-+]?\s*(?:#.*)?$/.test(normalizedLine)) {
+      inBlockScalar = true
+      blockScalarBaseIndent = rawIndent
+    }
+
+    out.push('  '.repeat(depth) + normalizedLine)
+  }
+
+  while (out.length && out[out.length - 1] === '') out.pop()
+  const formatted = out.join('\n') + (out.length ? '\n' : '')
+  return newline === '\r\n' ? formatted.replace(/\n/g, '\r\n') : formatted
+}

@@ -114,7 +114,7 @@
 
 @media (min-width: 1181px) {
   .app.intellij-workbench .shell { gap: 6px; }
-  .app.intellij-workbench .maven-panel { margin: 0 37px; overflow: hidden; }
+  .app.intellij-workbench .maven-panel { margin: 0 37px; overflow: visible; }
 }
 @media (max-width: 860px) {
   .app.intellij-workbench .dock { background: #282120; border-color: var(--line); }

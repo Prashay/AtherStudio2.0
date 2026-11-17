@@ -1,3 +1,5 @@
+const { mountVcs } = require('./vcs')
+const { mountTerminal } = require('./terminal')
 const { mountMaven } = require('./maven')
 const { mountJavaValidation } = require('./javaValidation')
 const { mountJavaFormat } = require('./javaFormat')
@@ -386,6 +388,35 @@ app.get('/api/tree', (req, res) => {
   }
 })
 
+app.get('/api/files', (req, res) => {
+  try {
+    const current = root()
+    if (!current) return res.json({ files: [] })
+    const allFiles = []
+    function scan(dir) {
+      let entries
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true })
+      } catch {
+        return
+      }
+      for (const entry of entries) {
+        if (entry.name.startsWith('.') || SKIP_DIRS.has(entry.name) || entry.name === '.DS_Store') continue
+        const full = path.join(dir, entry.name)
+        if (entry.isDirectory()) {
+          scan(full)
+        } else {
+          allFiles.push(toRel(full))
+        }
+      }
+    }
+    scan(current)
+    res.json({ files: allFiles })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
 app.get('/api/file', (req, res) => {
   try {
     const abs = safeJoin(req.query.path || '')
@@ -417,23 +448,50 @@ app.delete('/api/file', (req, res) => {
       return res.status(409).json({ error: 'The active project changed.' })
     }
     if (typeof req.body.path !== 'string' || !req.body.path) {
-      return res.status(400).json({ error: 'Select a file to delete.' })
+      return res.status(400).json({ error: 'Select a file or directory to delete.' })
     }
     const file = safeJoin(req.body.path)
     const base = fs.realpathSync(project)
     const parent = fs.realpathSync(path.dirname(file))
     const relative = path.relative(base, parent)
     if (path.isAbsolute(relative) || relative.split(path.sep)[0] === '..') {
-      return res.status(400).json({ error: 'File is outside the project.' })
+      return res.status(400).json({ error: 'Target is outside the project.' })
     }
     const target = path.join(parent, path.basename(file))
-    if (!fs.lstatSync(target).isFile()) {
-      return res.status(400).json({ error: 'Select a regular file to delete.' })
+    if (path.resolve(target) === path.resolve(base)) {
+      return res.status(400).json({ error: 'Cannot delete the project root directory.' })
     }
-    fs.unlinkSync(target)
+    const stat = fs.lstatSync(target)
+    if (stat.isDirectory()) {
+      fs.rmSync(target, { recursive: true, force: true })
+    } else {
+      fs.unlinkSync(target)
+    }
     res.json({ ok: true })
   } catch (err) {
     res.status(err.code === 'ENOENT' ? 404 : err.status || 500).json({ error: err.message })
+  }
+})
+
+app.post('/api/file/rename', (req, res) => {
+  try {
+    const { oldPath, newPath } = req.body || {}
+    if (!oldPath || !newPath) {
+      return res.status(400).json({ error: 'oldPath and newPath are required' })
+    }
+    const srcAbs = safeJoin(oldPath)
+    const dstAbs = safeJoin(newPath)
+    if (!fs.existsSync(srcAbs)) {
+      return res.status(404).json({ error: 'Source path does not exist' })
+    }
+    const dstParent = path.dirname(dstAbs)
+    if (!fs.existsSync(dstParent)) {
+      fs.mkdirSync(dstParent, { recursive: true })
+    }
+    fs.renameSync(srcAbs, dstAbs)
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
   }
 })
 
@@ -592,6 +650,8 @@ app.post('/api/chat', async (req, res) => {
 mountMaven(app, { root, safeJoin })
 mountJavaValidation(app, { root })
 mountJavaFormat(app)
+mountVcs(app, { root })
+mountTerminal(app, { root })
 
 const distCandidates = [
   path.join(__dirname, '..', 'frontend', 'dist'),

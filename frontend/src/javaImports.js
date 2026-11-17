@@ -8,6 +8,30 @@ const typePackages = {
   'java.net': 'URI URL',
   'java.nio.file': 'Files Path Paths',
   'java.time': 'Duration Instant LocalDate LocalDateTime LocalTime Period ZoneId ZonedDateTime',
+  'org.springframework.stereotype': 'Component Controller Indexed Repository Service',
+  'org.springframework.beans.factory.annotation': 'Autowired Configurable Qualifier Value',
+  'org.springframework.context.annotation': 'Bean Configuration Lazy Primary Profile PropertySource Scope',
+  'org.springframework.web.bind.annotation': 'ControllerAdvice CrossOrigin DeleteMapping ExceptionHandler GetMapping ModelAttribute PatchMapping PathVariable PostMapping PutMapping RequestBody RequestHeader RequestMapping RequestMethod RequestParam RequestPart ResponseBody ResponseStatus RestController RestControllerAdvice',
+  'org.springframework.boot.autoconfigure': 'EnableAutoConfiguration SpringBootApplication',
+  'org.springframework.boot': 'CommandLineRunner SpringApplication',
+  'org.springframework.http': 'HttpEntity HttpHeaders HttpMethod HttpStatus MediaType ResponseEntity',
+  'org.springframework.transaction.annotation': 'Transactional',
+  'lombok': 'AllArgsConstructor Builder Cleanup Data EqualsAndHashCode Getter NoArgsConstructor NonNull RequiredArgsConstructor Setter Singular SneakyThrows Synchronized ToString Value With',
+  'lombok.extern.slf4j': 'Slf4j',
+  'lombok.extern.log4j': 'Log4j2',
+  'org.slf4j': 'Logger LoggerFactory',
+  'jakarta.annotation': 'PostConstruct PreDestroy Resource',
+  'jakarta.validation': 'Valid',
+  'jakarta.validation.constraints': 'Email Max Min NotBlank NotEmpty NotNull Pattern Positive Size',
+}
+
+const commonTypos = {
+  'Autowire': 'org.springframework.beans.factory.annotation.Autowired',
+  'slf4j': 'lombok.extern.slf4j.Slf4j',
+  'component': 'org.springframework.stereotype.Component',
+  'service': 'org.springframework.stereotype.Service',
+  'repository': 'org.springframework.stereotype.Repository',
+  'restController': 'org.springframework.web.bind.annotation.RestController',
 }
 
 const importsByType = new Map(Object.entries(typePackages).flatMap(([pkg, types]) =>
@@ -30,7 +54,7 @@ export function javaImportSuggestions(source, lineNumber) {
   const suggestions = new Set()
   for (const match of line.matchAll(/[A-Za-z_$][\w$]*/g)) {
     const name = match[0]
-    const qualified = importsByType.get(name)
+    const qualified = importsByType.get(name) || (line.slice(0, match.index).trimEnd().endsWith('@') ? commonTypos[name] : null)
     if (!qualified || line.slice(0, match.index).trimEnd().endsWith('.') || declared.has(name)) continue
     const typePackage = qualified.slice(0, qualified.lastIndexOf('.'))
     if (samePackage === typePackage || existing.some((item) => item.endsWith('.' + name) || item === typePackage + '.*')) continue

@@ -3,19 +3,35 @@ import { maskJavaNonCode } from './javaImports.js'
 const identifier = /^[\p{L}_$][\p{L}\p{N}_$]*$/u
 
 export function javaDiagnosticTarget(rawLine, diagnostic) {
-  if (!rawLine || !diagnostic?.column) return null
-  const column = Math.min(diagnostic.column - 1, rawLine.length)
-  const symbol = diagnostic.message.match(/\bsymbol:\s+(?:variable|method|class)\s+([\p{L}_$][\p{L}\p{N}_$]*)/u)?.[1]
-  const publicType = diagnostic.message.match(/should be declared in a file named ([^\s/]+)\.java(?:$|\s)/)?.[1]
+  if (!rawLine || !diagnostic) return null
+  const col = typeof diagnostic.column === 'number' && diagnostic.column > 0 ? diagnostic.column - 1 : -1
+  const symbol = diagnostic.message?.match(/\bsymbol:\s+(?:variable|method|class)\s+([\p{L}_$][\p{L}\p{N}_$]*)/u)?.[1]
+  const publicType = diagnostic.message?.match(/should be declared in a file named ([^\s/]+)\.java(?:$|\s)/)?.[1]
   const tokens = [...maskJavaNonCode(rawLine).matchAll(/[\p{L}_$][\p{L}\p{N}_$]*/gu)]
-  const exact = tokens.find((token) => column >= token.index && column < token.index + token[0].length)
   const name = symbol || publicType
-  const named = name && tokens.filter((token) => token[0] === name)
-    .sort((a, b) => Math.abs(a.index - column) - Math.abs(b.index - column))[0]
-  const token = named || exact
-  if (token) return { text: token[0], start: token.index, end: token.index + token[0].length }
-  const character = rawLine[column]
-  return character?.trim() ? { text: character, start: column, end: column + 1 } : null
+
+  if (name) {
+    const named = tokens.filter((token) => token[0] === name)
+    if (named.length > 0) {
+      if (col >= 0) {
+        named.sort((a, b) => Math.abs(a.index - col) - Math.abs(b.index - col))
+      }
+      return { text: named[0][0], start: named[0].index, end: named[0].index + named[0][0].length }
+    }
+  }
+
+  if (col >= 0) {
+    const column = Math.min(col, rawLine.length)
+    const exact = tokens.find((token) => column >= token.index && column < token.index + token[0].length)
+    if (exact) return { text: exact[0], start: exact.index, end: exact.index + exact[0].length }
+    const character = rawLine[column]
+    if (character?.trim()) return { text: character, start: column, end: column + 1 }
+  }
+
+  if (tokens.length > 0) {
+    return { text: tokens[0][0], start: tokens[0].index, end: tokens[0].index + tokens[0].length }
+  }
+  return null
 }
 
 export function javaReferenceChange(source, lines, line, target, replacement) {

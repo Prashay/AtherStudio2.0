@@ -149,7 +149,35 @@ export function MavenLifecycle({ tree, project, onRun, onReload, onOpenPom, opti
   </div>
 }
 
-export default function MavenPanel({ project, tree, visible, onHide, applications, jdks, breakpointsByFile = {}, selectedApplication, onSelectApplication, launch, launchRequest, onLaunchHandled, onStartApplication, onDebugLocation, debugSourceLine, terminal, onToggleTerminal, options, setOptions }) {
+export default function MavenPanel({
+  project,
+  tree,
+  visible,
+  mode,
+  onSessionChange,
+  onRunningChange,
+  onRegisterStop,
+  onHide,
+  applications,
+  jdks,
+  breakpointsByFile = {},
+  selectedApplication,
+  onSelectApplication,
+  launch,
+  launchRequest,
+  onLaunchHandled,
+  onStartApplication,
+  onDebugLocation,
+  debugSourceLine,
+  terminal,
+  onToggleTerminal,
+  options,
+  setOptions,
+  isResizing,
+  onResizeStart,
+  onTouchResizeStart,
+  onResizeReset
+}) {
   const poms = usePoms(tree)
   const configKey = 'aether.runConfigurations:' + project
   const [configs, setConfigs] = useState(() => {
@@ -223,6 +251,37 @@ export default function MavenPanel({ project, tree, visible, onHide, application
     if (visible && consoleRef.current) consoleRef.current.scrollTop = consoleRef.current.scrollHeight
   }, [output, visible, debugView])
 
+  useEffect(() => {
+    if (session === 'Debug') onSessionChange?.('debug')
+    else if (session === 'Run') onSessionChange?.('run')
+    else if (session === 'Build') onSessionChange?.('build')
+  }, [session, onSessionChange])
+
+  useEffect(() => {
+    if (mode === 'build' && session !== 'Build') {
+      setGoal('compile')
+      setSession('Build')
+    } else if (mode === 'run' && session !== 'Run') {
+      setGoal('application')
+      setSession('Run')
+    } else if (mode === 'debug' && session !== 'Debug') {
+      setSession('Debug')
+    }
+  }, [mode])
+
+  useEffect(() => {
+    onRunningChange?.(running)
+  }, [running, onRunningChange])
+
+  useEffect(() => {
+    if (onRegisterStop) {
+      onRegisterStop(() => {
+        request.current?.abort()
+        if (activeRun) void stopActiveRun()
+      })
+    }
+  }, [onRegisterStop, activeRun])
+
   const handledLaunch = useRef(null)
   useEffect(() => {
     if (!launchRequest || handledLaunch.current === launchRequest) return
@@ -283,7 +342,7 @@ export default function MavenPanel({ project, tree, visible, onHide, application
     const startupTimer = debug ? setTimeout(() => {
       startupTimedOut = true
       controller.abort()
-    }, 30000) : null
+    }, 60000) : null
     setRunning(true)
     setStatus(debug ? 'Starting debugger…' : 'Running ' + goalToRun)
     let pendingOutput = ''
@@ -304,6 +363,25 @@ export default function MavenPanel({ project, tree, visible, onHide, application
         }, 40)
       }
     }
+    // Build breakpointsByClass: map file paths to fully-qualified class names
+    const breakpointsByClass = {}
+    if (debug && breakpointsByFile) {
+      for (const [filePath, bpLines] of Object.entries(breakpointsByFile)) {
+        if (!bpLines || !bpLines.length) continue
+        // Try to find the application entry for this file to get the className
+        const appEntry = applications.find(({ path }) => path === filePath)
+        if (appEntry) {
+          breakpointsByClass[appEntry.className] = bpLines
+        } else {
+          // Derive class name from file path: src/main/java/com/example/Foo.java -> com.example.Foo
+          const javaMatch = filePath.match(/src\/main\/java\/(.+)\.java$/)
+          if (javaMatch) {
+            const className = javaMatch[1].replace(/\//g, '.')
+            breakpointsByClass[className] = bpLines
+          }
+        }
+      }
+    }
     try {
       const response = await fetch(applicationRun ? '/api/java/run' : '/api/maven/run', {
         method: 'POST',
@@ -312,7 +390,7 @@ export default function MavenPanel({ project, tree, visible, onHide, application
           configuration: applicationRun ? {
             arguments: argumentLines(runConfig.programArguments), vmOptions: argumentLines(runConfig.vmOptions).map((option) => option.trim()),
             workingDirectory: runConfig.workingDirectory.trim(), redirectInput: runConfig.redirectInput.trim(), consoleOutput: runConfig.consoleOutput.trim(),
-            javaHome: runConfig.javaHome, variables: Object.fromEntries(variables), debug, debugPort: Number(runConfig.debugPort), suspend: runConfig.suspend, breakpoints: breakpointsByFile[runTarget.path], muted: debugState.muted } : undefined }),
+            javaHome: runConfig.javaHome, variables: Object.fromEntries(variables), debug, debugPort: Number(runConfig.debugPort), suspend: runConfig.suspend, breakpoints: breakpointsByFile[runTarget.path], breakpointsByClass, muted: debugState.muted } : undefined }),
         signal: controller.signal
       })
       if (!response.ok || !response.headers.get('content-type')?.includes('application/x-ndjson')) {
@@ -400,15 +478,35 @@ export default function MavenPanel({ project, tree, visible, onHide, application
     && Number(config.debugPort) >= 1024 && Number(config.debugPort) <= 65535
     && config.environment.split(/\r?\n/).every((line) => !line.trim() || /^\s*[A-Za-z_][A-Za-z0-9_]*=/.test(line))
   const showDebug = !terminal && session === 'Debug' && debugTarget
-  const activeBreakpointLines = breakpointsByFile[debugTarget?.application]
+  const allBreakpointsByClass = useMemo(() => {
+    const map = {}
+    if (!breakpointsByFile) return map
+    for (const [filePath, lines] of Object.entries(breakpointsByFile)) {
+      if (!lines || !lines.length) continue
+      const app = applications?.find(({ path }) => path === filePath)
+      let className = app?.className
+      if (!className) {
+        const javaMatch = filePath.match(/(?:src\/(?:main|test)\/java\/)(.+)\.java$/)
+        if (javaMatch) className = javaMatch[1].replace(/[/\\]/g, '.')
+      }
+      if (className) {
+        map[className] = lines
+      }
+    }
+    return map
+  }, [breakpointsByFile, applications])
+
+  const lastSentBreakpoints = useRef('')
   useEffect(() => {
-    if (!running || !debugState.id || !debugTarget || activeBreakpointLines === debugTarget.lines) return
-    const lines = activeBreakpointLines || []
+    if (!running || !debugState.id) return
+    const serialized = JSON.stringify(allBreakpointsByClass)
+    if (serialized === lastSentBreakpoints.current) return
+    lastSentBreakpoints.current = serialized
     const controller = new AbortController()
     fetch('/api/java/debug/action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Aether-Build': 'maven' },
-      body: JSON.stringify({ id: debugState.id, action: 'breakpoints', breakpoints: lines }),
+      body: JSON.stringify({ id: debugState.id, action: 'breakpoints', breakpoints: allBreakpointsByClass }),
       signal: controller.signal
     }).then((response) => {
       if (!response.ok) throw new Error('Could not update breakpoints for this session.')
@@ -416,7 +514,7 @@ export default function MavenPanel({ project, tree, visible, onHide, application
       if (!controller.signal.aborted) setStatus(error.message)
     })
     return () => controller.abort()
-  }, [running, debugState.id, debugTarget, activeBreakpointLines])
+  }, [running, debugState.id, allBreakpointsByClass])
   useEffect(() => {
     const frame = inspection?.frames?.[inspection.selectedFrame]
     onDebugLocation?.(running && debugState.paused && frame?.application && frame.line
@@ -451,7 +549,17 @@ export default function MavenPanel({ project, tree, visible, onHide, application
       setStatus('Could not read the clipboard.')
     }
   }
+  const resizeHandle = (
+    <div
+      className={`resizer-handle top ${isResizing ? 'active' : ''}`}
+      onMouseDown={onResizeStart}
+      onTouchStart={onTouchResizeStart}
+      onDoubleClick={onResizeReset}
+      title="Drag to resize panel (Double-click to reset)"
+    />
+  )
   return <>{showDebug ? <section className="maven-panel java-debug-panel" aria-label="Java Debug" hidden={!visible}>
+    {resizeHandle}
     <header className="java-debug-header">
       <strong>Debug</strong>
       <span className="java-debug-target" title={debugTarget.name}>{debugTarget.name.split('.').at(-1)}</span>
@@ -522,7 +630,17 @@ export default function MavenPanel({ project, tree, visible, onHide, application
         </div>}
       {showBreakpoints && <aside className="java-debug-detail" aria-label="Breakpoints">
         <strong>Breakpoints{debugState.muted ? ' (muted)' : ''}</strong>
-        {activeBreakpointLines?.length ? <ul>{activeBreakpointLines.map((line) => <li key={line}>{debugTarget.name}:{line}</li>)}</ul> : <p>No breakpoints for this class.</p>}
+        {Object.keys(allBreakpointsByClass).length ? (
+          <ul>
+            {Object.entries(allBreakpointsByClass).flatMap(([className, lines]) =>
+              lines.map((line) => (
+                <li key={`${className}:${line}`}>
+                  {className.split('.').at(-1)}:{line} <small title={className}>({className})</small>
+                </li>
+              ))
+            )}
+          </ul>
+        ) : <p>No breakpoints set.</p>}
       </aside>}
     </div>
     {comparison && (
@@ -538,6 +656,7 @@ export default function MavenPanel({ project, tree, visible, onHide, application
     <div className="maven-status" role="status">{status}</div>
     {previousRun}
   </section> : <section className={`maven-panel ${terminal ? 'has-run-configuration' : ''}`} aria-label="Maven build tool window" hidden={!visible}>
+    {resizeHandle}
     <div className="maven-toolbar">
       <strong>{terminal ? 'Maven Terminal' : session || (goal === 'application' ? 'Run / Debug' : 'Build')}</strong>
       {goal === 'application' && !terminal

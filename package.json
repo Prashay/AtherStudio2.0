@@ -71,7 +71,7 @@
           ]
         }
       ],
-      "icon": "build/icon.ico"
+      "icon": "electron/icon.ico"
     },
     "mac": {
       "target": [

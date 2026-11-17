@@ -1,12 +1,12 @@
 import { debuggerValues } from './debuggerValues.js'
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react'
-import { javaHighlight } from './javaHighlight.js'
+import { javaHighlight, codeHighlight } from './javaHighlight.js'
 import { getJavaHint } from './javaHints.js'
 import { javaSnippet } from './javaSnippets.js'
 import { javaClassNameFix } from './javaClassNameFix.js'
-import { javaVariableActions, makeJavaTypePackagePrivate } from './javaQuickFixes.js'
+import { javaVariableActions, makeJavaTypePackagePrivate, javaMethodActions, inferVariableType, getDefaultValueForType } from './javaQuickFixes.js'
 import { javaDiagnosticTarget, javaParameterSuggestion, javaReferenceChange } from './javaDiagnosticTarget.js'
-import { validateSyntax } from './syntaxValidation.js'
+import { validateSyntax, formatJsonSource, formatYamlSource } from './syntaxValidation.js'
 import { insertJavaImport, javaImportSuggestions, maskJavaNonCode } from './javaImports.js'
 
 export default function CodeEditor({
@@ -16,6 +16,8 @@ export default function CodeEditor({
   fontSize,
   wordWrap,
   jump,
+  onNavigate,
+  applications = [],
   mainLine,
   onRunMain,
   onDebugMain,
@@ -26,7 +28,8 @@ export default function CodeEditor({
   className = '',
   outline = [],
   externalFoldedLines,
-  onExternalToggleFold
+  onExternalToggleFold,
+  onValidationChange
 }) {
   const frame = useRef(null)
   const hintTimer = useRef(null)
@@ -46,7 +49,13 @@ export default function CodeEditor({
   const [importLine, setImportLine] = useState(null)
   const [importAnchor, setImportAnchor] = useState(null)
   const [braceCaret, setBraceCaret] = useState(null)
+  const [activeCaretLine, setActiveCaretLine] = useState(1)
+  const [hoveredSymbol, setHoveredSymbol] = useState(null)
+  const [isShiftDown, setIsShiftDown] = useState(false)
+  const [isModifierDown, setIsModifierDown] = useState(false)
+  const lastMouseCoords = useRef({ x: 0, y: 0 })
   const [formatStatus, setFormatStatus] = useState(null)
+  const [navHighlightLine, setNavHighlightLine] = useState(null)
 
   useEffect(() => {
     setHintTarget(null)
@@ -82,6 +91,9 @@ export default function CodeEditor({
 
   const isJava = /\.java$/i.test(path)
   const ext = (path.match(/\.([^.]+)$/)?.[1] || '').toLowerCase()
+  const isJson = ext === 'json'
+  const isYaml = ext === 'yml' || ext === 'yaml'
+  const isFormattable = isJava || isJson || isYaml
   const validatableExtensions = new Set([
     'json', 'yml', 'yaml', 'xml', 'html', 'htm', 'hbs', 'handlebars',
     'csv', 'tsv', 'md', 'markdown', 'config', 'properties', 'env',
@@ -204,7 +216,7 @@ export default function CodeEditor({
     }
   }, [rawLines, value, activeFolds, foldMap, isJava])
 
-  const highlighted = useMemo(() => isJava ? javaHighlight(path, displayedValue.replace(/\r\n?/g, '\n')) : null, [isJava, path, displayedValue])
+  const highlighted = useMemo(() => codeHighlight(path, displayedValue.replace(/\r\n?/g, '\n')), [path, displayedValue])
   const result = validation?.path === path && validation.source === value ? validation : null
   const diagnostics = result?.diagnostics || []
   const problemCount = diagnostics.length
@@ -220,12 +232,18 @@ export default function CodeEditor({
 
   const byLine = new Map()
   for (const item of diagnostics) {
-    const line = item.line || 1
-    if (!byLine.has(line)) byLine.set(line, [])
-    byLine.get(line).push(item)
+    if (typeof item.line === 'number' && item.line > 0) {
+      if (!byLine.has(item.line)) byLine.set(item.line, [])
+      byLine.get(item.line).push(item)
+    }
   }
-  if (result?.error) byLine.set(1, [{ severity: 'warning', message: result.error }])
   const breakpoints = new Set(breakpointLines)
+
+  useEffect(() => {
+    if (onValidationChange && result) {
+      onValidationChange(path, hasErrors)
+    }
+  }, [path, result, hasErrors, onValidationChange])
 
   // Validation hook (Java backend compiler or multi-language client validator)
   useEffect(() => {
@@ -308,12 +326,413 @@ export default function CodeEditor({
     const lineHeight = parseFloat(getComputedStyle(field).lineHeight) || 20
     field.scrollTop = Math.max(0, (line - 3) * lineHeight)
     syncScroll(field)
+
+    // Smooth line flash highlight like IntelliJ / Eclipse
+    setNavHighlightLine(line)
+    setTimeout(() => {
+      setNavHighlightLine((cur) => (cur === line ? null : cur))
+    }, 1200)
   }, [])
+
+  // Navigate to symbol definition (intra-file or cross-file)
+  const pushNavHistory = useCallback((targetOffset, targetLen = 0, targetPath = path, targetSymbol = null) => {
+    if (targetPath && targetPath !== path && onNavigate) {
+      onNavigate(targetPath, targetSymbol, targetOffset)
+    } else {
+      jumpToOffset(targetOffset, targetLen)
+    }
+  }, [path, onNavigate, jumpToOffset])
+
+  // Helper to extract identifier token at offset
+  const getWordAtOffset = useCallback((text, offset) => {
+    if (!text || offset < 0 || offset > text.length) return null
+    const isWordChar = (c) => /[a-zA-Z0-9_$]/.test(c)
+    let start = offset
+    let end = offset
+
+    if (start < text.length && !isWordChar(text[start]) && start > 0 && isWordChar(text[start - 1])) {
+      start--
+      end--
+    }
+    if (!isWordChar(text[start])) return null
+
+    while (start > 0 && isWordChar(text[start - 1])) start--
+    while (end < text.length && isWordChar(text[end])) end++
+
+    const word = text.slice(start, end)
+    return word ? { word, start, end } : null
+  }, [])
+
+  // Get symbol info from client coordinates directly and reliably without pointer-events issues
+  const getSymbolAtCoords = useCallback((clientX, clientY) => {
+    if (!editor.current || !value) return null
+
+    // Method 1: Inspect highlight DOM lines directly
+    if (highlight.current) {
+      const rows = highlight.current.querySelectorAll('.java-source-line')
+      if (rows && rows.length > 0) {
+        let targetRow = null
+        for (let i = 0; i < rows.length; i++) {
+          const rect = rows[i].getBoundingClientRect()
+          if (clientY >= rect.top - 2 && clientY <= rect.bottom + 2) {
+            targetRow = rows[i]
+            break
+          }
+        }
+
+        if (targetRow) {
+          const line = Number(targetRow.dataset.sourceLine)
+          if (line && line >= 1) {
+            const lineText = rawLines[line - 1] || ''
+            const lineStartOffset = rawLines.slice(0, line - 1).reduce((sum, r) => sum + r.length + 1, 0)
+
+            // Look for matching token span inside targetRow
+            const spans = targetRow.querySelectorAll('span')
+            let matchedSpan = null
+            for (let j = 0; j < spans.length; j++) {
+              const sRect = spans[j].getBoundingClientRect()
+              if (clientX >= sRect.left - 2 && clientX <= sRect.right + 2) {
+                matchedSpan = spans[j]
+                break
+              }
+            }
+
+            if (matchedSpan && /[\w$]+/.test(matchedSpan.textContent)) {
+              const word = (matchedSpan.dataset.token || matchedSpan.textContent).trim()
+              const col = matchedSpan.dataset.col !== undefined ? Number(matchedSpan.dataset.col) : -1
+              if (col >= 0) {
+                return {
+                  word,
+                  offset: lineStartOffset + col,
+                  line,
+                  column: col + 1
+                }
+              }
+              const tokens = [...lineText.matchAll(/[\w$]+/g)]
+              const token = tokens.find((t) => t[0] === word)
+              if (token) {
+                return {
+                  word: token[0],
+                  offset: lineStartOffset + token.index,
+                  line,
+                  column: token.index + 1
+                }
+              }
+            }
+
+            // Fallback within row if span not directly hit
+            const rowRect = targetRow.getBoundingClientRect()
+            const sampleWidth = 8.4
+            const approxCol = Math.max(0, Math.floor((clientX - rowRect.left) / sampleWidth))
+            const tokens = [...lineText.matchAll(/[\w$]+/g)]
+            const token = tokens.find((item) => approxCol >= item.index - 1 && approxCol <= item.index + item[0].length + 1)
+            if (token) {
+              return {
+                word: token[0],
+                offset: lineStartOffset + token.index,
+                line,
+                column: token.index + 1
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Method 2: Fallback using line-height and char estimation on textarea
+    const edRect = editor.current.getBoundingClientRect()
+    if (clientX >= edRect.left && clientX <= edRect.right && clientY >= edRect.top && clientY <= edRect.bottom) {
+      const computed = window.getComputedStyle(editor.current)
+      const paddingTop = parseFloat(computed.paddingTop) || 0
+      const paddingLeft = parseFloat(computed.paddingLeft) || 0
+      const lineHeight = parseFloat(computed.lineHeight) || 21
+      const charWidth = 8.4
+      const relY = clientY - edRect.top + editor.current.scrollTop - paddingTop
+      const lineIdx = Math.max(0, Math.min(rawLines.length - 1, Math.floor(relY / lineHeight)))
+      const line = lineIdx + 1
+      const lineText = rawLines[lineIdx] || ''
+      const lineStartOffset = rawLines.slice(0, lineIdx).reduce((sum, r) => sum + r.length + 1, 0)
+      const relX = clientX - edRect.left + editor.current.scrollLeft - paddingLeft
+      const approxCol = Math.max(0, Math.floor(relX / charWidth))
+      const tokens = [...lineText.matchAll(/[\w$]+/g)]
+      const token = tokens.find((item) => approxCol >= item.index - 1 && approxCol <= item.index + item[0].length + 1)
+      if (token) {
+        return {
+          word: token[0],
+          offset: lineStartOffset + token.index,
+          line,
+          column: token.index + 1
+        }
+      }
+    }
+
+    return null
+  }, [value, rawLines])
+
+  // Precision symbol analyzer: distinguishes definitions from usages, resolves receiver types and classes
+  const analyzeSymbol = useCallback((text, word, clickOffset = 0) => {
+    if (!word || !text) return { defs: [], usages: [], isAtDefinition: false, primaryDef: null, receiverClass: null, isClass: false }
+    const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const escaped = escapeRegex(word)
+
+    // Java keywords that should never be navigated
+    const JAVA_KEYWORDS = new Set([
+      'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char', 'class',
+      'const', 'continue', 'default', 'do', 'double', 'else', 'enum', 'extends', 'final',
+      'finally', 'float', 'for', 'goto', 'if', 'implements', 'import', 'instanceof', 'int',
+      'interface', 'long', 'native', 'new', 'package', 'private', 'protected', 'public',
+      'return', 'short', 'static', 'strictfp', 'super', 'switch', 'synchronized', 'this',
+      'throw', 'throws', 'transient', 'try', 'void', 'volatile', 'while', 'record', 'yield',
+      'var', 'sealed', 'permits', 'non-sealed'
+    ])
+    if (JAVA_KEYWORDS.has(word)) {
+      return { defs: [], usages: [], isAtDefinition: false, primaryDef: null, receiverClass: null, isClass: false }
+    }
+
+    // 1. Check method/class declarations in code via AST/regex
+    // Recognizes annotations (@Override, @GetMapping...), generics (<T>, ResponseEntity<ProductResponse>), arrays
+    const declRegex = /(?:@[\w$]+(?:\([^)]*\))?\s+)*(?:(?:public|protected|private|static|final|abstract|synchronized|default|native|strictfp|sealed)\s+)*(?:(class|interface|enum|record)\s+([\w$]+)|(?:<[\w$,\s?]+>\s+)?([\w$.<>?,[\] ]+?)\s+([\w$]+)\s*\(([^;{}()]*)\)\s*(?:throws\s+[^;{}]+)?(?:\{|;))/g
+    const defs = []
+    let m
+    while ((m = declRegex.exec(text)) !== null) {
+      const name = m[2] || m[4]
+      if (name === word) {
+        const fullMatch = m[0]
+        const wordIdx = fullMatch.indexOf(name)
+        const offset = m.index + (wordIdx >= 0 ? wordIdx : 0)
+        defs.push({
+          name,
+          offset,
+          line: text.slice(0, offset).split('\n').length,
+          signature: fullMatch.replace(/\{.*$/, '').trim(),
+          kind: m[2] ? m[1] : 'method'
+        })
+      }
+    }
+
+    // 2. Cross-reference outline items
+    for (const item of outline) {
+      if ((item.name === word || item.method === word) && !defs.some((d) => Math.abs(d.offset - item.offset) < 50)) {
+        const snippet = text.slice(Math.max(0, item.offset - 40), item.offset + 120)
+        const tokenIdx = snippet.indexOf(word)
+        const offset = tokenIdx >= 0 ? Math.max(0, item.offset - 40) + tokenIdx : item.offset
+        defs.push({
+          name: word,
+          offset,
+          line: item.line || item.startLine,
+          signature: item.label || item.detail || word,
+          kind: item.kind || 'method'
+        })
+      }
+    }
+
+    // 3. Check variable / field / parameter declarations
+    const varDeclRegex = /(?:(?:public|protected|private|static|final)\s+)?(?:[\w$.<>\[\]]+)\s+([\w$]+)\s*(?:=|;|,|\)|:)/g
+    let vm
+    while ((vm = varDeclRegex.exec(text)) !== null) {
+      const varName = vm[1]
+      if (varName === word) {
+        const wordIdx = vm[0].indexOf(varName)
+        const offset = vm.index + (wordIdx >= 0 ? wordIdx : 0)
+        if (!defs.some((d) => Math.abs(d.offset - offset) < 5)) {
+          defs.push({
+            name: varName,
+            offset,
+            line: text.slice(0, offset).split('\n').length,
+            signature: vm[0].replace(/[;=,].*$/, '').trim(),
+            kind: 'variable'
+          })
+        }
+      }
+    }
+
+    // 4. Find all occurrences in text
+    const occRegex = new RegExp('\\b' + escaped + '\\b', 'g')
+    const allOccs = []
+    let occ
+    while ((occ = occRegex.exec(text)) !== null) {
+      allOccs.push({
+        offset: occ.index,
+        line: text.slice(0, occ.index).split('\n').length
+      })
+    }
+
+    // Usages are occurrences that are not definitions
+    const isDefOffset = (pos) => defs.some((d) => Math.abs(d.offset - pos) <= word.length)
+    const usages = allOccs.filter((o) => !isDefOffset(o.offset))
+
+    // Is the clicked offset at the definition token itself?
+    const matchedDef = defs.find((d) => Math.abs(d.offset - clickOffset) <= word.length)
+    const isAtDefinition = Boolean(matchedDef)
+
+    // Select the best primary definition
+    let primaryDef = matchedDef
+    if (!primaryDef && defs.length > 0) {
+      const preceding = defs.filter((d) => d.offset <= clickOffset)
+      primaryDef = preceding.length > 0 ? preceding[preceding.length - 1] : defs[0]
+    }
+
+    // 5. If no local definition found, check if word is invoked on an object / receiver:
+    // e.g. productHandler.createProduct(...) -> receiver is productHandler
+    let receiverClass = null
+    const safeOffset = clickOffset > 0 ? clickOffset : (allOccs[0]?.offset ?? 0)
+    const prefixText = text.slice(Math.max(0, safeOffset - 120), safeOffset)
+    const receiverMatch = /([\w$]+)\s*\.\s*$/.exec(prefixText)
+    if (receiverMatch) {
+      const receiverVar = receiverMatch[1]
+      if (/^[A-Z]/.test(receiverVar)) {
+        receiverClass = receiverVar
+      } else {
+        const varTypeRegex = new RegExp(
+          `(?:(?:private|protected|public|static|final)\\s+)*([A-Z][\\w$]*)(?:<[^>]+>)?\\s+${receiverVar}\\b`
+        )
+        const varTypeMatch = varTypeRegex.exec(text)
+        if (varTypeMatch) {
+          receiverClass = varTypeMatch[1]
+        }
+      }
+    }
+
+    const isClass = /^[A-Z][\w$]*$/.test(word)
+
+    return {
+      defs,
+      usages,
+      isAtDefinition,
+      primaryDef,
+      receiverClass,
+      isClass
+    }
+  }, [outline])
+
+  // Go to Definition or Usage on Shift+Click, Ctrl+Click, or F12 / Ctrl+B
+  const jumpToDefinitionOrUsage = useCallback((word, clickOffset) => {
+    if (!word || !editor.current) return false
+    const text = value
+    const len = word.length
+    const { defs, usages, isAtDefinition, primaryDef, receiverClass, isClass } = analyzeSymbol(text, word, clickOffset)
+
+    if (isAtDefinition) {
+      // User is already at the definition -> cycle through its usages!
+      if (usages.length > 0) {
+        const next = usages.find((u) => u.offset > clickOffset + 10) ?? usages[0]
+        pushNavHistory(next.offset, len)
+        return true
+      }
+      return false
+    }
+
+    if (primaryDef) {
+      // User is at a method call, variable use, or local class -> jump to its definition!
+      pushNavHistory(primaryDef.offset, len)
+      return true
+    }
+
+    // Cross-file navigation:
+    // If it's a method call on a resolved receiver object:
+    // e.g. productHandler.createProduct(...) -> receiverClass = 'ProductHandler', method = 'createProduct'
+    if (receiverClass && onNavigate) {
+      pushNavHistory(0, len, receiverClass + '.java', word)
+      return true
+    }
+
+    // If it's a class name: e.g. ProductHandler, ProductResponse
+    if (isClass && onNavigate) {
+      pushNavHistory(0, len, word + '.java', word)
+      return true
+    }
+
+    // Cross-file method or symbol search:
+    if (onNavigate) {
+      pushNavHistory(0, len, null, word)
+      return true
+    }
+
+    return false
+  }, [value, pushNavHistory, onNavigate, analyzeSymbol])
+
+  // Find definition info and usages for Shift/hover tooltip
+  const findSymbolInfo = useCallback((word, clickOffset) => {
+    if (!word || !value) return null
+    const { defs, usages, isAtDefinition, primaryDef, receiverClass, isClass } = analyzeSymbol(value, word, clickOffset)
+    if (!primaryDef && !receiverClass && !isClass && usages.length === 0) return null
+
+    const fileName = path ? path.split(/[/\\]/).pop() : 'current file'
+    const projectName = workspace ? workspace.split(/[/\\]/).pop() : fileName.replace(/\.java$/, '')
+
+    // Extract package and class for IntelliJ header
+    const pkgMatch = /^\s*package\s+([\w.]+)\s*;/m.exec(value)
+    const pkg = pkgMatch ? pkgMatch[1] : ''
+    const clsMatch = /^\s*(?:public\s+|protected\s+|private\s+|abstract\s+|final\s+)*class\s+([\w$]+)/m.exec(value)
+    const cls = clsMatch ? clsMatch[1] : fileName.replace(/\.java$/, '')
+    const qualifiedClass = pkg ? `${pkg}.${cls}` : cls
+
+    if (primaryDef) {
+      return {
+        word,
+        kind: primaryDef.kind,
+        signature: primaryDef.signature,
+        defLine: primaryDef.line,
+        fileName,
+        projectName,
+        qualifiedClass,
+        isDefinition: isAtDefinition,
+        targetOffset: isAtDefinition ? (usages[0]?.offset ?? primaryDef.offset) : primaryDef.offset,
+        usageCount: usages.length,
+        usageLines: usages.map((u) => u.line)
+      }
+    }
+
+    // Cross-file receiver method or class
+    const targetClassName = receiverClass || (isClass ? word : null)
+    if (targetClassName) {
+      const app = applications.find(
+        (a) => a.path.endsWith('/' + targetClassName + '.java') || (a.className && a.className.endsWith('.' + targetClassName))
+      )
+      const qClass = app?.className || (pkg ? `${pkg}.${targetClassName}` : targetClassName)
+      const isMethodCall = Boolean(receiverClass)
+      return {
+        word,
+        kind: isMethodCall ? 'method' : 'class',
+        signature: isMethodCall ? `public ${targetClassName} ${word}(...)` : `public class ${targetClassName}`,
+        defLine: 1,
+        fileName: `${targetClassName}.java`,
+        projectName: app?.className ? app.className.split('.').slice(0, -1).join('.') : projectName,
+        qualifiedClass: qClass,
+        targetPath: app?.path || `${targetClassName}.java`,
+        targetOffset: 0,
+        isDefinition: false,
+        usageCount: 0,
+        usageLines: []
+      }
+    }
+
+    return null
+  }, [value, path, applications, workspace, analyzeSymbol])
 
   useEffect(() => {
     if (jump?.path !== path || !editor.current) return
-    jumpToOffset(jump.offset)
-  }, [jump, path, jumpToOffset])
+    if (jump.symbol) {
+      // Priority 1: Match declaration in the file
+      const declRegex = new RegExp(
+        `(?:(?:public|protected|private|static|final|abstract|synchronized)\\s+)*(?:(?:class|interface|enum|record)\\s+|[\\w$.<>\\[\\]]+\\s+)${jump.symbol}\\b`
+      )
+      const declMatch = declRegex.exec(value)
+      if (declMatch) {
+        const symIdx = declMatch.index + declMatch[0].lastIndexOf(jump.symbol)
+        jumpToOffset(symIdx, jump.symbol.length)
+        return
+      }
+      const idx = value.indexOf(jump.symbol)
+      if (idx >= 0) {
+        jumpToOffset(idx, jump.symbol.length)
+        return
+      }
+    }
+    if (typeof jump.offset === 'number') {
+      jumpToOffset(jump.offset)
+    }
+  }, [jump, path, value, jumpToOffset])
 
   useEffect(() => {
     const field = editor.current
@@ -401,13 +820,40 @@ export default function CodeEditor({
     return () => window.removeEventListener('keydown', handleFindKey, true)
   }, [openSearch])
 
+  // Track modifier keys for IntelliJ Ctrl+hover and Shift+hover hyperlinks
+  useEffect(() => {
+    const handleModDown = (e) => {
+      if (e.key === 'Control' || e.key === 'Shift' || e.key === 'Meta') {
+        setIsModifierDown(true)
+        if (e.key === 'Shift') setIsShiftDown(true)
+      }
+    }
+    const handleModUp = (e) => {
+      if (e.key === 'Control' || e.key === 'Shift' || e.key === 'Meta') {
+        const stillDown = e.ctrlKey || e.shiftKey || e.metaKey
+        setIsModifierDown(stillDown)
+        if (!e.shiftKey) setIsShiftDown(false)
+        if (!stillDown) {
+          setHoveredSymbol(null)
+        }
+      }
+    }
+    window.addEventListener('keydown', handleModDown)
+    window.addEventListener('keyup', handleModUp)
+    return () => {
+      window.removeEventListener('keydown', handleModDown)
+      window.removeEventListener('keyup', handleModUp)
+    }
+  }, [])
+
   const importSuggestions = useMemo(() => isJava && importLine?.path === path
     ? javaImportSuggestions(value, importLine.line) : [], [isJava, importLine, path, value])
 
   const updateImportLine = (field, afterEdit = false) => {
-    if (!isJava) return
     const index = field.value.slice(0, field.selectionStart).split('\n').length - 1
     const line = afterEdit ? index + 1 : visibleLines[index]?.realLine
+    if (line) setActiveCaretLine(line)
+    if (!isJava) return
     const column = field.selectionStart - field.value.lastIndexOf('\n', field.selectionStart - 1) - 1
     setImportLine({ path, line, column })
     setBraceCaret(!afterEdit && visibleLines[index]?.isFolded ? null : { path, line, column })
@@ -511,6 +957,63 @@ export default function CodeEditor({
     requestAnimationFrame(() => jumpToOffset(position + (position >= updated.offset ? updated.length : 0)))
   }
 
+  const handleBracketAutoClose = (event) => {
+    if (event.ctrlKey || event.altKey || event.metaKey) return false
+    const field = event.currentTarget
+    const start = field.selectionStart
+    const end = field.selectionEnd
+
+    // Only auto-close '(' and '{' (never '<', '[', quotes, to prevent breaking comparison operators like '<')
+    const pairs = {
+      '(': ')',
+      '{': '}'
+    }
+    const closingChars = new Set([')', '}'])
+
+    // 1. Backspace: delete matching pair if cursor is between () or {}
+    if (event.key === 'Backspace' && start === end && start > 0) {
+      const prev = field.value[start - 1]
+      const next = field.value[start]
+      if (
+        (prev === '(' && next === ')') ||
+        (prev === '{' && next === '}')
+      ) {
+        event.preventDefault()
+        field.setRangeText('', start - 1, start + 1, 'end')
+        field.setSelectionRange(start - 1, start - 1)
+        handleEditorChange(field.value)
+        return true
+      }
+    }
+
+    // 2. Overtype closing character
+    if (closingChars.has(event.key) && start === end && field.value[start] === event.key) {
+      event.preventDefault()
+      field.setSelectionRange(start + 1, start + 1)
+      return true
+    }
+
+    // 3. Auto-close opening pair
+    if (pairs[event.key]) {
+      const close = pairs[event.key]
+      event.preventDefault()
+      if (start !== end) {
+        // Wrap selected text: e.g. (selected) or {selected}
+        const selected = field.value.slice(start, end)
+        field.setRangeText(event.key + selected + close, start, end, 'select')
+        field.setSelectionRange(start + 1, end + 1)
+      } else {
+        // Insert pair and place caret in between
+        field.setRangeText(event.key + close, start, end, 'end')
+        field.setSelectionRange(start + 1, start + 1)
+      }
+      handleEditorChange(field.value)
+      return true
+    }
+
+    return false
+  }
+
   const indent = (event) => {
     if (event.key !== 'Tab' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return
     const field = event.currentTarget
@@ -520,10 +1023,11 @@ export default function CodeEditor({
     handleEditorChange(field.value)
   }
 
-  const diagnosticOnHover = hintTarget?.source === value && (byLine.get(hintTarget.line) || []).find((diagnostic) => {
+  const lineDiagnosticsForHover = hintTarget?.source === value ? (byLine.get(hintTarget.line) || []) : []
+  const diagnosticOnHover = hintTarget?.source === value && (lineDiagnosticsForHover.find((diagnostic) => {
     const range = javaDiagnosticTarget(rawLines[hintTarget.line - 1], diagnostic)
     return range && hintTarget.column >= range.start && hintTarget.column <= range.end
-  })
+  }) || lineDiagnosticsForHover[0])
   const hoverClassFix = hintTarget?.source === value ? classFixForLine(hintTarget.line) : null
   const hoverPackagePrivate = hoverClassFix && makeJavaTypePackagePrivate(value, hintTarget.line, hoverClassFix)
   const hoverHint = hintTarget && hintTarget.source === value
@@ -533,8 +1037,17 @@ export default function CodeEditor({
   const hoverDetails = diagnosticOnHover || hoverHint?.diagnostic
   const diagnosticRange = hintTarget && javaDiagnosticTarget(rawLines[hintTarget.line - 1], hoverDetails)
   const variableName = hoverDetails?.message.match(/symbol:\s+variable\s+([^\s·]+)/)?.[1]
-  const canRenameReference = Boolean(variableName && diagnosticRange?.text === variableName)
+  const canRenameReference = Boolean(variableName)
+  const inferredVarType = variableName && hintTarget ? inferVariableType(rawLines[hintTarget.line - 1], variableName) : 'int'
   const variableActions = canRenameReference ? javaVariableActions(value, outline, hintTarget.line, variableName) : []
+
+  // Missing method quick fix (e.g. "cannot find symbol ... symbol: method calculateTotal(int,String)")
+  const methodSymbol = hoverDetails?.message.match(/symbol:\s+method\s+([\w$]+)\s*(?:\(([^)]*)\))?/)
+  const missingMethodName = methodSymbol?.[1]
+  const missingMethodParams = methodSymbol?.[2] || ''
+  const methodAction = missingMethodName && hintTarget
+    ? javaMethodActions(value, outline, hintTarget.line, missingMethodName, missingMethodParams, rawLines[hintTarget.line - 1])
+    : null
   const declaration = declarationDraft && variableActions.find(({ label }) => label === declarationDraft.label)
   const declarationEdit = declaration?.edit(declarationDraft.type, declarationDraft.initializer)
   const suggestedParameter = canRenameReference && javaParameterSuggestion(outline, hintTarget.line, diagnosticRange.text)
@@ -562,44 +1075,39 @@ export default function CodeEditor({
   }
 
   const previewJavaHint = (event) => {
+    lastMouseCoords.current = { x: event.clientX, y: event.clientY }
     if (!isJava || !highlight.current || event.pointerType === 'touch' || event.buttons) return
-    const field = event.currentTarget
-    const layer = highlight.current
-    field.style.pointerEvents = 'none'
-    layer.style.pointerEvents = 'auto'
-    let range
-    try {
-      range = document.caretRangeFromPoint(event.clientX, event.clientY)
-    } finally {
-      field.style.pointerEvents = ''
-      layer.style.pointerEvents = ''
+
+    const sym = getSymbolAtCoords(event.clientX, event.clientY)
+    if (!sym) {
+      if (pointerToken.current !== null) scheduleHintClose()
+      setHoveredSymbol(null)
+      return
     }
-    const node = range?.startContainer
-    const row = node?.parentElement?.closest('.java-source-line')
-    if (!row || row.parentElement !== layer) {
+
+    if (event.shiftKey || event.ctrlKey || event.metaKey || isShiftDown || isModifierDown) {
+      // Underline token with IntelliJ hyperlink on Ctrl/Cmd/Shift
+      setHoveredSymbol(sym.word)
+    } else {
+      setHoveredSymbol(null)
+    }
+
+    const line = sym.line
+    const column = sym.column
+    const lineDiagnostics = byLine.get(line) || []
+    const punctuation = lineDiagnostics.some((item) => item.column - 1 === column)
+    if (!sym.word && !punctuation && !lineDiagnostics.length) {
       if (pointerToken.current !== null) scheduleHintClose()
       return
     }
-    const line = Number(row.dataset.sourceLine)
-    const measured = document.createRange()
-    measured.selectNodeContents(row)
-    measured.setEnd(node, range.startOffset)
-    const column = measured.toString().length
-    const token = [...(rawLines[line - 1] || '').matchAll(/[\w$]+/g)].find((item) =>
-      column >= item.index && column <= item.index + item[0].length)
-    const punctuation = (byLine.get(line) || []).some((item) => item.column - 1 === column)
-    if (!token && !punctuation) {
-      if (pointerToken.current !== null) scheduleHintClose()
-      return
-    }
-    const key = line + ':' + (token?.index ?? column)
+    const key = line + ':' + sym.offset
     if (key === pointerToken.current) return
     pointerToken.current = key
     clearTimeout(hintTimer.current)
-    const bounds = frame.current.getBoundingClientRect()
-    const left = Math.max(8, Math.min(event.clientX - bounds.left, bounds.width - 462))
-    const top = Math.max(8, Math.min(event.clientY - bounds.top + 14, bounds.height - 190))
-    hintTimer.current = setTimeout(() => setHintTarget({ source: value, line, column, left, top }), 380)
+    const bounds = frame.current?.getBoundingClientRect() || { left: 0, top: 0, width: 600, height: 400 }
+    const hintLeft = Math.max(8, Math.min(event.clientX - bounds.left, bounds.width - 462))
+    const hintTop = Math.max(8, Math.min(event.clientY - bounds.top + 14, bounds.height - 190))
+    hintTimer.current = setTimeout(() => setHintTarget({ source: value, line, column, left: hintLeft, top: hintTop }), 380)
   }
 
   const currentJavaLine = importLine?.path === path ? importLine.line : null
@@ -634,25 +1142,56 @@ export default function CodeEditor({
       ranges.push({ start: column, end: column + 1, style: 'java-brace-match' })
     }
     let offset = 0
+    const isHyperlinkActive = Boolean((isModifierDown || isShiftDown) && hoveredSymbol)
     return tokens.map(({ text, kind }, index) => {
       const start = offset
       offset += text.length
+      const isWord = /^[\p{L}_$][\p{L}\p{N}_$]*$/u.test(text)
+      const tokenKind = kind || (isWord ? 'ident' : '')
+      const isHyperlink = isHyperlinkActive && text === hoveredSymbol
       const decorations = ranges.filter((range) => range.end > start && range.start < offset)
-      if (!decorations.length) return kind ? <span className={`java-${kind}`} key={index}>{text}</span> : text
+      if (!decorations.length) {
+        const cls = [tokenKind ? `java-${tokenKind}` : '', isHyperlink ? 'java-token-hyperlink' : ''].filter(Boolean).join(' ')
+        return cls ? <span className={cls} key={index} data-col={start} data-token={text}>{text}</span> : <span key={index} data-col={start}>{text}</span>
+      }
       const boundaries = [...new Set([start, offset, ...decorations.flatMap((range) =>
         [Math.max(range.start, start), Math.min(range.end, offset)])])].sort((a, b) => a - b)
-      return <span className={kind ? `java-${kind}` : undefined} key={index}>
-        {boundaries.slice(0, -1).map((position, part) => {
-          const classes = decorations.filter((range) => range.start <= position && range.end > position).map((range) => range.style)
-          const segment = text.slice(position - start, boundaries[part + 1] - start)
-          return classes.length ? <span className={classes.join(' ')} key={position}>{segment}</span> : segment
-        })}
-      </span>
+      return (
+        <span className={tokenKind ? `java-${tokenKind}` : undefined} key={index} data-col={start} data-token={text}>
+          {boundaries.slice(0, -1).map((position, part) => {
+            const classes = decorations.filter((range) => range.start <= position && range.end > position).map((range) => range.style)
+            if (isHyperlink) classes.push('java-token-hyperlink')
+            const segment = text.slice(position - start, boundaries[part + 1] - start)
+            return classes.length ? <span className={classes.join(' ')} key={position}>{segment}</span> : segment
+          })}
+        </span>
+      )
     })
   }
 
-  const formatJava = async () => {
+  const formatDocument = async () => {
     if (formatStatus?.pending) return
+    if (isJson) {
+      try {
+        const formatted = formatJsonSource(value)
+        replaceEditorSource(formatted)
+        setFormatStatus({ message: 'JSON formatted' })
+      } catch (error) {
+        setFormatStatus({ message: error.message || 'Invalid JSON syntax.' })
+      }
+      return
+    }
+    if (isYaml) {
+      try {
+        const formatted = formatYamlSource(value)
+        replaceEditorSource(formatted)
+        setFormatStatus({ message: 'YAML formatted' })
+      } catch (error) {
+        setFormatStatus({ message: error.message || 'Invalid YAML syntax.' })
+      }
+      return
+    }
+    if (!isJava) return
     if (import.meta.env.MODE === 'pages') {
       setFormatStatus({ message: 'Java formatting requires the Ather Studio desktop app.' })
       return
@@ -742,13 +1281,35 @@ export default function CodeEditor({
               )}
             </div>
           )}
+          {methodAction && (
+            <div className="java-reference-actions java-declaration-actions">
+              <button
+                type="button"
+                className="ghost"
+                style={{ color: '#58a6ff', fontWeight: 600 }}
+                onClick={() => {
+                  applySourceAction(methodAction)
+                  dismissHint()
+                }}
+              >
+                ✦ {methodAction.label}
+              </button>
+              <small style={{ color: 'var(--muted, #888)', display: 'block', marginTop: '2px' }}>
+                Generates <code>{methodAction.preview}</code> (Alt+Enter)
+              </small>
+            </div>
+          )}
           {variableActions.length > 0 && (
             <div className="java-reference-actions java-declaration-actions">
               {variableActions.map((action) => (
                 <button type="button" className="ghost" key={action.label} onClick={() => {
-                  setDeclarationDraft({ label: action.label, type: '', initializer: '' })
+                  setDeclarationDraft({
+                    label: action.label,
+                    type: inferredVarType,
+                    initializer: getDefaultValueForType(inferredVarType)
+                  })
                   setReferenceDraft(null)
-                }}>{action.label} ‘{variableName}’</button>
+                }}>✦ {action.label} ‘{variableName}’ <small>({inferredVarType})</small></button>
               ))}
               {declaration && (
                 <form onSubmit={(event) => {
@@ -758,9 +1319,9 @@ export default function CodeEditor({
                     dismissHint()
                   }
                 }}>
-                  <label>Type <input autoFocus value={declarationDraft.type} placeholder="int[]" onChange={(event) =>
+                  <label>Type <input autoFocus value={declarationDraft.type} placeholder="int" onChange={(event) =>
                     setDeclarationDraft({ ...declarationDraft, type: event.target.value })} /></label>
-                  {declaration.needsValue && <label>Initial value <input value={declarationDraft.initializer} placeholder="Existing value or expression" onChange={(event) =>
+                  {declaration.needsValue && <label>Initial value <input value={declarationDraft.initializer} placeholder="0" onChange={(event) =>
                     setDeclarationDraft({ ...declarationDraft, initializer: event.target.value })} /></label>}
                   {declarationEdit && <code>{declarationEdit.preview.trim()}</code>}
                   <button type="submit" className="ghost" disabled={!declarationEdit}>Apply</button>
@@ -803,10 +1364,12 @@ export default function CodeEditor({
           )}
         </aside>
       )}
-      {isJava && (
+      {isFormattable && (
         <div className="java-import-actions java-structure-actions">
-          <button type="button" className="ghost" onClick={formatJava} disabled={formatStatus?.pending}>Format Java</button>
-          {matchingBrace && (
+          <button type="button" className="ghost" onClick={formatDocument} disabled={formatStatus?.pending}>
+            {isJson ? 'Format JSON' : isYaml ? 'Format YAML' : 'Format Java'}
+          </button>
+          {isJava && matchingBrace && (
             <button type="button" className="ghost" onClick={() => {
               activeFolds.forEach(toggleFold)
               requestAnimationFrame(() => jumpToOffset(value.slice(0, matchingBrace.offset).replace(/\r\n/g, '\n').length))
@@ -912,14 +1475,17 @@ export default function CodeEditor({
         </div>
       )}
 
-      <div className={`code-editor ${isJava ? 'java-editor' : ''}`} style={{ '--editor-size': `${fontSize}px` }}>
+      <div className={`code-editor ${isJava ? 'java-editor' : ''} ${highlighted ? 'has-highlight' : ''}`} style={{ '--editor-size': `${fontSize}px` }}>
         {/* Line Numbers Gutter: RENDERED FOR EVERY TYPE OF FILE */}
         {/* Strictly uncopyable: user-select: none & pointer-events: none */}
         <div className="code-gutter" ref={gutter} aria-label="Line numbers">
           {visibleLines.map((lineData) => {
             const { realLine, isFoldHeader, isFolded, foldInfo } = lineData
+            const lineDiags = byLine.get(realLine) || []
+            const hasLineError = lineDiags.some((d) => d.severity === 'error')
+            const hasLineWarn = !hasLineError && lineDiags.some((d) => d.severity === 'warning')
             return (
-              <div className="code-gutter-line" key={realLine}>
+              <div className={`code-gutter-line ${activeCaretLine === realLine ? 'active-line' : ''} ${hasLineError ? 'error-line-gutter' : hasLineWarn ? 'warn-line-gutter' : ''}`} key={realLine}>
                 {isJava && (
                   <button
                     type="button"
@@ -985,14 +1551,25 @@ export default function CodeEditor({
         <div className="code-editor-field">
           {highlighted && (
             <pre ref={highlight} className={`java-highlight ${wordWrap ? 'wrap' : ''}`} aria-hidden="true">
-              {highlighted.map((tokens, line) => (
-                <span key={line} data-source-line={visibleLines[line]?.isFolded ? undefined : visibleLines[line]?.realLine} className={`java-source-line ${breakpoints.has(visibleLines[line]?.realLine) ? 'java-breakpoint-line' : ''} ${debugLine === visibleLines[line]?.realLine ? 'java-execution-line' : ''}`}>
-                  {tokens.length ? renderJavaTokens(tokens, visibleLines[line]) : '\u200b'}
-                  {debugLine === visibleLines[line]?.realLine && debugLocation?.variables?.length > 0 && (
-                    <span className="java-execution-values">{[...(debugCondition === undefined ? [] : ['= ' + debugCondition]), ...debugLocation.variables.slice(0, 4).map(({ name, value }) => name + ' = ' + value)].join('   ')}</span>
-                  )}
-                </span>
-              ))}
+              {highlighted.map((tokens, line) => {
+                const lineData = visibleLines[line]
+                const realLine = lineData?.realLine
+                const lineDiags = byLine.get(realLine) || []
+                const hasLineError = lineDiags.some((d) => d.severity === 'error')
+                const hasLineWarn = !hasLineError && lineDiags.some((d) => d.severity === 'warning')
+                return (
+                  <span
+                    key={line}
+                    data-source-line={lineData?.isFolded ? undefined : realLine}
+                    className={`java-source-line ${activeCaretLine === realLine ? 'java-active-line' : ''} ${breakpoints.has(realLine) ? 'java-breakpoint-line' : ''} ${debugLine === realLine ? 'java-execution-line' : ''} ${hasLineError ? 'java-error-line' : hasLineWarn ? 'java-warning-line' : ''} ${navHighlightLine === realLine ? 'java-nav-jump-highlight' : ''}`}
+                  >
+                    {tokens.length ? renderJavaTokens(tokens, lineData) : '\u200b'}
+                    {debugLine === realLine && debugLocation?.variables?.length > 0 && (
+                      <span className="java-execution-values">{[...(debugCondition === undefined ? [] : ['= ' + debugCondition]), ...debugLocation.variables.slice(0, 4).map(({ name, value }) => name + ' = ' + value)].join('   ')}</span>
+                    )}
+                  </span>
+                )
+              })}
             </pre>
           )}
 
@@ -1002,9 +1579,59 @@ export default function CodeEditor({
             aria-label={`Edit ${path}`}
             value={displayedValue}
             wrap={wordWrap ? 'soft' : 'off'}
+            style={{ cursor: (isShiftDown || isModifierDown) ? 'pointer' : undefined }}
             onPointerMove={previewJavaHint}
-            onPointerLeave={scheduleHintClose}
-            onPointerDown={dismissHint}
+            onPointerLeave={() => {
+              scheduleHintClose()
+              setHoveredSymbol(null)
+            }}
+            onPointerDown={(event) => {
+              dismissHint()
+            }}
+            onMouseDown={(event) => {
+              if (event.shiftKey || event.ctrlKey || event.metaKey) {
+                event.preventDefault()
+                let sym = getSymbolAtCoords(event.clientX, event.clientY)
+                if (!sym && hoveredSymbol) {
+                  sym = { word: hoveredSymbol, offset: 0 }
+                }
+                if (!sym && editor.current) {
+                  const caretInfo = getWordAtOffset(value, editor.current.selectionStart)
+                  if (caretInfo) {
+                    sym = { word: caretInfo.word, offset: caretInfo.start }
+                  }
+                }
+                if (sym) {
+                  jumpToDefinitionOrUsage(sym.word, sym.offset)
+                }
+              }
+            }}
+            onClick={(event) => {
+              if (event.shiftKey || event.ctrlKey || event.metaKey) {
+                event.preventDefault()
+                let sym = getSymbolAtCoords(event.clientX, event.clientY)
+                if (!sym && hoveredSymbol) {
+                  sym = { word: hoveredSymbol, offset: 0 }
+                }
+                if (!sym && editor.current) {
+                  const caretInfo = getWordAtOffset(value, event.currentTarget.selectionStart)
+                  if (caretInfo) {
+                    sym = { word: caretInfo.word, offset: caretInfo.start }
+                  }
+                }
+                if (sym) {
+                  jumpToDefinitionOrUsage(sym.word, sym.offset)
+                }
+                return
+              }
+            }}
+            onKeyUp={(event) => {
+              if (event.key === 'Shift' || event.key === 'Control' || event.key === 'Meta') {
+                setIsShiftDown(false)
+                setIsModifierDown(false)
+                setHoveredSymbol(null)
+              }
+            }}
             onFocus={(event) => updateImportLine(event.currentTarget)}
             onSelect={(event) => updateImportLine(event.currentTarget)}
             onChange={(event) => {
@@ -1012,18 +1639,52 @@ export default function CodeEditor({
               handleEditorChange(event.target.value)
             }}
             onKeyDown={(event) => {
-              if (event.key === 'Escape' && (hoverHint || hoverDetails)) {
-                dismissHint()
-              } else if (isJava && event.ctrlKey && event.altKey && event.key.toLowerCase() === 'l') {
+              if (handleBracketAutoClose(event)) return
+
+              if (event.key === 'F4' || event.key === 'F12' || ((event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === 'b' || event.key === 'Enter' || event.key === 'ArrowDown' || event.key === 'ArrowUp'))) {
                 event.preventDefault()
-                void formatJava()
-              } else if (sourceAction && (event.altKey && event.key === 'Enter' ||
-                snippet && event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey)) {
+                const field = event.currentTarget
+                const offset = field.selectionStart
+                const wordInfo = getWordAtOffset(field.value, offset)
+                if (wordInfo) {
+                  jumpToDefinitionOrUsage(wordInfo.word, wordInfo.start)
+                }
+                return
+              }
+
+              if (event.key === 'Shift' || event.key === 'Control' || event.key === 'Meta') {
+                setIsShiftDown(true)
+                setIsModifierDown(true)
+                const field = event.currentTarget
+                const offset = field.selectionStart
+                const wordInfo = getWordAtOffset(field.value, offset)
+                if (wordInfo) {
+                  setHoveredSymbol(wordInfo.word)
+                }
+              } else if (event.key === 'Escape' && (hoverHint || hoverDetails)) {
+                dismissHint()
+              } else if (isFormattable && event.ctrlKey && event.altKey && event.key.toLowerCase() === 'l') {
+                event.preventDefault()
+                void formatDocument()
+              } else if (event.altKey && event.key === 'Enter') {
+                if (methodAction) {
+                  event.preventDefault()
+                  applySourceAction(methodAction)
+                  dismissHint()
+                } else if (declarationEdit) {
+                  event.preventDefault()
+                  applySourceAction(declarationEdit)
+                  dismissHint()
+                } else if (sourceAction) {
+                  event.preventDefault()
+                  applySourceAction(sourceAction)
+                } else if (isJava && currentImport) {
+                  event.preventDefault()
+                  applyImport(currentImport.qualified)
+                }
+              } else if (sourceAction && snippet && event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
                 event.preventDefault()
                 applySourceAction(sourceAction)
-              } else if (isJava && event.altKey && event.key === 'Enter' && currentImport) {
-                event.preventDefault()
-                applyImport(currentImport.qualified)
               } else if (isJava && event.key === 'Escape' && inlineAction) {
                 setImportLine(null)
               } else if (isJava && event.ctrlKey && event.key === 'F8') {
@@ -1089,7 +1750,10 @@ export default function CodeEditor({
               title={diagnosticLabel}
               aria-label={`Diagnostics. ${diagnosticLabel}`}
             >
-              <span aria-hidden="true">{diagnosticStatus === 'success' ? '✓' : diagnosticStatus === 'pending' ? '…' : '!'}</span>
+              <span className="java-diagnostics-icon" aria-hidden="true">
+                {diagnosticStatus === 'success' ? '✓' : diagnosticStatus === 'pending' ? '…' : diagnosticStatus === 'error' ? '✕' : '⚠'}
+              </span>
+              {problemCount > 0 && <span className="java-diagnostics-count">{problemCount}</span>}
               <span className="java-diagnostics-label">{diagnosticLabel}</span>
             </summary>
             <div className="java-diagnostics-list">

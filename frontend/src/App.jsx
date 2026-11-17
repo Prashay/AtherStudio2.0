@@ -1,6 +1,8 @@
-import TreeIcon from './TreeIcon.jsx'
+import TreeIcon, { fileIconName } from './TreeIcon.jsx'
 import { fileOutline } from './fileOutline.js'
 import MavenPanel, { MavenLifecycle } from './MavenPanel.jsx'
+import VcsLogPanel, { VcsCommitPanel, VcsBranchWidget } from './VcsPanel.jsx'
+import TerminalPanel from './TerminalPanel.jsx'
 import SearchEverywhere from './SearchEverywhere.jsx'
 import CodeEditor from './CodeEditor.jsx'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -34,6 +36,14 @@ const iconPaths = {
 }
 
 function WorkbenchIcon({ name }) {
+  if (name === 'ai' || name === 'sparkles') {
+    return (
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 2.5C12 7.5 8 11.5 3 11.5C8 11.5 12 15.5 12 20.5C12 15.5 16 11.5 21 11.5C16 11.5 12 7.5 12 2.5Z" fill="currentColor" fillOpacity="0.22" />
+        <path d="M18.5 2.5C18.5 4.5 17 6 15 6C17 6 18.5 7.5 18.5 9.5C18.5 7.5 20 6 22 6C20 6 18.5 4.5 18.5 2.5Z" fill="currentColor" fillOpacity="0.3" />
+      </svg>
+    )
+  }
   return (
     <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round">
       <path d={iconPaths[name]} />
@@ -433,7 +443,7 @@ function AppleAiOrb({ size = 150 }) {
   )
 }
 
-function TreeNode({ node, depth, active, onOpen, openDirs, toggleDir, loadDirectory, onProjectMenu, compactPackages, foldersFirst }) {
+function TreeNode({ node, depth, active, onOpen, openDirs, toggleDir, loadDirectory, onProjectMenu, compactPackages, foldersFirst, fileErrors }) {
   const isDir = node.type === 'dir'
   let displayNode = node
   let label = node.name.endsWith('.java') && !isDir ? node.name.slice(0, -5) : node.name
@@ -444,9 +454,11 @@ function TreeNode({ node, depth, active, onOpen, openDirs, toggleDir, loadDirect
     }
   }
   const packageFolder = isDir && /(?:^|\/)src\/(?:main|test)\/java\//.test(node.path)
-  const icon = isDir ? (packageFolder ? 'package' : 'folder')
-    : node.name === 'pom.xml' ? 'maven' : node.name.endsWith('.java') ? 'java' : 'file'
+  const icon = fileIconName(node.name, isDir, packageFolder)
+  const isTargetDir = isDir && (node.name === 'target' || node.name === 'build' || node.name === 'dist')
   const open = openDirs.has(node.path)
+  const hasError = !isDir && fileErrors && (fileErrors.has(node.path) || fileErrors.has(displayNode.path))
+  const hasErrorInside = isDir && fileErrors && Array.from(fileErrors).some((p) => p.startsWith((displayNode.path || node.path) + '/'))
   const needsLoad = isDir && open && !displayNode.children?.length && !displayNode.directoryLoaded
   const directoryPath = displayNode.path
   const [loadError, setLoadError] = useState(false)
@@ -467,14 +479,14 @@ function TreeNode({ node, depth, active, onOpen, openDirs, toggleDir, loadDirect
         aria-expanded={isDir ? open : undefined}
         aria-current={!isDir && active === node.path ? "true" : undefined}
         data-project-path={node.path}
-        className={`tree-item ${active === node.path ? 'on' : ''}`}
+        className={`tree-item ${active === node.path ? 'on' : ''} ${isTargetDir ? 'tree-item-target' : ''} ${hasError ? 'tree-item-has-error' : hasErrorInside ? 'tree-item-has-error-inside' : ''}`}
         style={{ paddingLeft: 7 + depth * 14 }}
         onClick={() => (isDir ? toggleDir(node.path) : onOpen(node.path))}
         onContextMenu={(event) => onProjectMenu(event, displayNode)}
       >
         <span aria-hidden="true" className={`project-tree-chevron ${isDir ? '' : 'placeholder'} ${open ? 'expanded' : ''}`} />
         <span className={`project-tree-icon ${icon}`}><TreeIcon name={icon} /></span>
-        <span title={displayNode.path}>{label}</span>
+        <span title={displayNode.path} style={{ color: hasError ? '#ff7b72' : hasErrorInside ? '#d29922' : undefined, textDecoration: hasError ? 'underline wavy #f85149 1px' : undefined }}>{label}{hasError ? ' ⚠️' : ''}</span>
       </button>
       {needsLoad && loadDirectory && <div className="hint" style={{ paddingLeft: 21 + depth * 14 }} role="status">
         {loadError ? 'Could not load folder. Collapse and reopen to retry.' : 'Loading folder…'}
@@ -492,6 +504,7 @@ function TreeNode({ node, depth, active, onOpen, openDirs, toggleDir, loadDirect
           onProjectMenu={onProjectMenu}
           compactPackages={compactPackages}
           foldersFirst={foldersFirst}
+          fileErrors={fileErrors}
         />
       ))}
     </div>
@@ -561,6 +574,18 @@ export default function App() {
   const [openDirs, setOpenDirs] = useState(() => new Set(['']))
   const [tabs, setTabs] = useState([])
   const [active, setActive] = useState('')
+  const [fileErrors, setFileErrors] = useState(() => new Set())
+  const handleValidationChange = useCallback((filePath, hasError) => {
+    setFileErrors((prev) => {
+      const next = new Set(prev)
+      if (hasError) {
+        next.add(filePath)
+      } else {
+        next.delete(filePath)
+      }
+      return next
+    })
+  }, [])
   const [dirty, setDirty] = useState({})
   const [recentProjects, setRecentProjects] = useState(() => {
     try {
@@ -578,6 +603,7 @@ export default function App() {
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [activeMenu, setActiveMenu] = useState(null)
   const [projectMenu, setProjectMenu] = useState(null)
+  const [contextSubmenu, setContextSubmenu] = useState(null)
   const [closedEditorFiles, setClosedEditorFiles] = useState([])
   const editorTabStrip = useRef(null)
   const [tabStripWidth, setTabStripWidth] = useState(0)
@@ -624,7 +650,13 @@ export default function App() {
   const [structureOpen, setStructureOpen] = useState(false)
   const [editorJump, setEditorJump] = useState(null)
   const [debugLocation, setDebugLocation] = useState(null)
+  const [mavenMode, setMavenMode] = useState('run') // 'run' | 'debug' | 'build'
   const [mavenOpen, setMavenOpen] = useState(false)
+  const [appRunning, setAppRunning] = useState(false)
+  const stopAppRef = useRef(null)
+  const [vcsOpen, setVcsOpen] = useState(false)
+  const [commitSideOpen, setCommitSideOpen] = useState(false)
+  const [vcsState, setVcsState] = useState(null)
   const [searchEverywhere, setSearchEverywhere] = useState(false)
   const lastShift = useRef(0)
   const [search, setSearch] = useState('')
@@ -1033,7 +1065,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
   const [leftWidth, setLeftWidth] = useState(() => {
     try {
       const saved = localStorage.getItem('aether.left_width')
-      return saved ? Math.max(160, Math.min(700, parseInt(saved, 10))) : 260
+      return saved ? Math.max(120, Math.min(750, parseInt(saved, 10))) : 260
     } catch {
       return 260
     }
@@ -1042,9 +1074,27 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
   const [rightWidth, setRightWidth] = useState(() => {
     try {
       const saved = localStorage.getItem('aether.right_width')
-      return saved ? Math.max(240, Math.min(850, parseInt(saved, 10))) : 360
+      return saved ? Math.max(180, Math.min(850, parseInt(saved, 10))) : 360
     } catch {
       return 360
+    }
+  })
+
+  const [bottomHeight, setBottomHeight] = useState(() => {
+    try {
+      const saved = localStorage.getItem('aether.bottom_height')
+      return saved ? Math.max(90, Math.min(900, parseInt(saved, 10))) : 240
+    } catch {
+      return 240
+    }
+  })
+
+  const [structureHeight, setStructureHeight] = useState(() => {
+    try {
+      const saved = localStorage.getItem('aether.structure_height')
+      return saved ? Math.max(80, Math.min(600, parseInt(saved, 10))) : 220
+    } catch {
+      return 220
     }
   })
 
@@ -1056,8 +1106,8 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     document.body.classList.add('resizing-col')
 
     const onMouseMove = (moveEvent) => {
-      const minW = 160
-      const maxW = Math.max(minW, Math.floor(window.innerWidth * 0.45))
+      const minW = 120
+      const maxW = Math.max(minW, Math.floor(window.innerWidth * 0.55))
       const newWidth = Math.max(minW, Math.min(moveEvent.clientX, maxW))
       setLeftWidth(newWidth)
     }
@@ -1083,8 +1133,8 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     document.body.classList.add('resizing-col')
 
     const onMouseMove = (moveEvent) => {
-      const minW = 240
-      const maxW = Math.max(minW, Math.floor(window.innerWidth * 0.55))
+      const minW = 180
+      const maxW = Math.max(minW, Math.floor(window.innerWidth * 0.6))
       const newWidth = Math.max(minW, Math.min(window.innerWidth - moveEvent.clientX, maxW))
       setRightWidth(newWidth)
     }
@@ -1112,8 +1162,8 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     const onTouchMove = (moveEvent) => {
       const t = moveEvent.touches[0]
       if (!t) return
-      const minW = 160
-      const maxW = Math.max(minW, Math.floor(window.innerWidth * 0.45))
+      const minW = 120
+      const maxW = Math.max(minW, Math.floor(window.innerWidth * 0.55))
       const newWidth = Math.max(minW, Math.min(t.clientX, maxW))
       setLeftWidth(newWidth)
     }
@@ -1140,8 +1190,8 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     const onTouchMove = (moveEvent) => {
       const t = moveEvent.touches[0]
       if (!t) return
-      const minW = 240
-      const maxW = Math.max(minW, Math.floor(window.innerWidth * 0.55))
+      const minW = 180
+      const maxW = Math.max(minW, Math.floor(window.innerWidth * 0.6))
       const newWidth = Math.max(minW, Math.min(window.innerWidth - t.clientX, maxW))
       setRightWidth(newWidth)
     }
@@ -1153,6 +1203,126 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       setRightWidth((w) => {
         try { localStorage.setItem('aether.right_width', String(w)) } catch {}
         return w
+      })
+    }
+
+    window.addEventListener('touchmove', onTouchMove)
+    window.addEventListener('touchend', onTouchEnd)
+  }, [])
+
+  const startResizeBottom = useCallback((e) => {
+    e.preventDefault()
+    setIsResizing('bottom')
+    document.body.classList.add('resizing-row')
+
+    const onMouseMove = (moveEvent) => {
+      const minH = 90
+      const maxH = Math.max(minH, Math.floor(window.innerHeight * 0.8))
+      const footerH = document.querySelector('.workbench-status')?.offsetHeight || 0
+      const dockEl = document.querySelector('.dock')
+      const dockH = dockEl && window.getComputedStyle(dockEl).display !== 'none' ? dockEl.offsetHeight : 0
+      const newHeight = Math.max(minH, Math.min(window.innerHeight - footerH - dockH - moveEvent.clientY, maxH))
+      setBottomHeight(newHeight)
+    }
+
+    const onMouseUp = () => {
+      document.body.classList.remove('resizing-row')
+      setIsResizing(null)
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+      setBottomHeight((h) => {
+        try { localStorage.setItem('aether.bottom_height', String(h)) } catch {}
+        return h
+      })
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }, [])
+
+  const handleTouchBottom = useCallback((e) => {
+    const touch = e.touches[0]
+    if (!touch) return
+    setIsResizing('bottom')
+
+    const onTouchMove = (moveEvent) => {
+      const t = moveEvent.touches[0]
+      if (!t) return
+      const minH = 90
+      const maxH = Math.max(minH, Math.floor(window.innerHeight * 0.8))
+      const footerH = document.querySelector('.workbench-status')?.offsetHeight || 0
+      const dockEl = document.querySelector('.dock')
+      const dockH = dockEl && window.getComputedStyle(dockEl).display !== 'none' ? dockEl.offsetHeight : 0
+      const newHeight = Math.max(minH, Math.min(window.innerHeight - footerH - dockH - t.clientY, maxH))
+      setBottomHeight(newHeight)
+    }
+
+    const onTouchEnd = () => {
+      setIsResizing(null)
+      window.removeEventListener('touchmove', onTouchMove)
+      window.removeEventListener('touchend', onTouchEnd)
+      setBottomHeight((h) => {
+        try { localStorage.setItem('aether.bottom_height', String(h)) } catch {}
+        return h
+      })
+    }
+
+    window.addEventListener('touchmove', onTouchMove)
+    window.addEventListener('touchend', onTouchEnd)
+  }, [])
+
+  const startResizeStructure = useCallback((e) => {
+    e.preventDefault()
+    const sideEl = e.currentTarget.closest('.side')
+    setIsResizing('structure')
+    document.body.classList.add('resizing-row')
+
+    const onMouseMove = (moveEvent) => {
+      const rect = sideEl?.getBoundingClientRect()
+      const bottomEdge = rect ? rect.bottom : window.innerHeight
+      const maxH = rect ? Math.floor(rect.height * 0.75) : 500
+      const newHeight = Math.max(80, Math.min(bottomEdge - moveEvent.clientY, maxH))
+      setStructureHeight(newHeight)
+    }
+
+    const onMouseUp = () => {
+      document.body.classList.remove('resizing-row')
+      setIsResizing(null)
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+      setStructureHeight((h) => {
+        try { localStorage.setItem('aether.structure_height', String(h)) } catch {}
+        return h
+      })
+    }
+
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }, [])
+
+  const handleTouchStructure = useCallback((e) => {
+    const touch = e.touches[0]
+    if (!touch) return
+    const sideEl = e.currentTarget.closest('.side')
+    setIsResizing('structure')
+
+    const onTouchMove = (moveEvent) => {
+      const t = moveEvent.touches[0]
+      if (!t) return
+      const rect = sideEl?.getBoundingClientRect()
+      const bottomEdge = rect ? rect.bottom : window.innerHeight
+      const maxH = rect ? Math.floor(rect.height * 0.75) : 500
+      const newHeight = Math.max(80, Math.min(bottomEdge - t.clientY, maxH))
+      setStructureHeight(newHeight)
+    }
+
+    const onTouchEnd = () => {
+      setIsResizing(null)
+      window.removeEventListener('touchmove', onTouchMove)
+      window.removeEventListener('touchend', onTouchEnd)
+      setStructureHeight((h) => {
+        try { localStorage.setItem('aether.structure_height', String(h)) } catch {}
+        return h
       })
     }
 
@@ -1914,10 +2084,121 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     }
   }, [menuOpen])
 
+  const refreshVcsStatus = useCallback(async () => {
+    if (!workspace.root || webDirHandle || virtualFiles) {
+      setVcsState(null)
+      return
+    }
+    try {
+      const res = await fetch('/api/vcs/status')
+      if (res.ok) {
+        const data = await res.json()
+        setVcsState(data)
+      }
+    } catch {}
+  }, [workspace.root, webDirHandle, virtualFiles])
+
+  useEffect(() => {
+    void refreshVcsStatus()
+  }, [refreshVcsStatus])
+
   const toggleProject = () => {
-    if (!leftOpen) setPane('editor')
-    setLeftOpen(!leftOpen)
+    if (!leftOpen) {
+      setPane('editor')
+      setLeftOpen(true)
+      setCommitSideOpen(false)
+    } else if (commitSideOpen) {
+      setCommitSideOpen(false)
+    } else {
+      setLeftOpen(false)
+    }
   }
+
+  const toggleCommitSide = () => {
+    if (!leftOpen) {
+      setPane('editor')
+      setLeftOpen(true)
+      setCommitSideOpen(true)
+    } else if (!commitSideOpen) {
+      setCommitSideOpen(true)
+    } else {
+      setCommitSideOpen(false)
+    }
+  }
+
+  const toggleVcsLog = () => {
+    const next = !vcsOpen
+    setVcsOpen(next)
+    if (next) {
+      setMavenOpen(false)
+      setTerminalOpen(false)
+    }
+  }
+
+  const toggleTerminal = () => {
+    const next = !terminalOpen
+    setTerminalOpen(next)
+    if (next) {
+      setMavenOpen(false)
+      setVcsOpen(false)
+    }
+  }
+
+  const toggleMavenPanel = (desiredMode = 'run') => {
+    if (mavenOpen && mavenMode === desiredMode) {
+      setMavenOpen(false)
+    } else {
+      setMavenMode(desiredMode)
+      setMavenOpen(true)
+      setVcsOpen(false)
+      setTerminalOpen(false)
+    }
+  }
+
+  useEffect(() => {
+    const onGlobalKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k' && !e.shiftKey) {
+        e.preventDefault()
+        setLeftOpen(true)
+        setCommitSideOpen(true)
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setVcsOpen(true)
+        setMavenOpen(false)
+        setTerminalOpen(false)
+      } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === '4') {
+        e.preventDefault()
+        toggleMavenPanel('run')
+      } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === '5') {
+        e.preventDefault()
+        if (selectedLaunch) void executeApplication(true, selectedLaunch)
+        else toggleMavenPanel('debug')
+      } else if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'F12' || e.code === 'F12')) {
+        e.preventDefault()
+        toggleTerminal()
+      } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.key === '9') {
+        e.preventDefault()
+        toggleVcsLog()
+      } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key === '`') {
+        e.preventDefault()
+        toggleTerminal()
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'F2' || e.code === 'F2')) {
+        e.preventDefault()
+        stopApplication()
+      } else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 't') {
+        if (workspace.root && vcsState?.isRepo) {
+          e.preventDefault()
+          fetch('/api/vcs/action', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'pull' })
+          }).then(() => refreshVcsStatus()).catch(() => {})
+        }
+      }
+    }
+    window.addEventListener('keydown', onGlobalKeyDown)
+    return () => window.removeEventListener('keydown', onGlobalKeyDown)
+  }, [workspace.root, vcsState?.isRepo, refreshVcsStatus, mavenOpen, vcsOpen, terminalOpen, selectedLaunch])
   const toggleAssistant = () => {
     setMavenSideOpen(false)
     switchMode(rightOpen && mode === 'editor' ? 'editor' : 'chat')
@@ -1936,14 +2217,23 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     }
     if (current?.path === target.path && isDirty(current) && !(await saveFile())) return
     setTerminalOpen(false)
+    setVcsOpen(false)
     setMavenOpen(true)
+    setMavenMode(debug ? 'debug' : 'run')
     setLaunchTarget(target.path)
     setLaunchRequest({ goal: 'application', debug, application: target.path })
   }
-  const toggleTerminal = () => {
-    const next = !mavenOpen || !terminalOpen
-    setMavenOpen(next)
-    setTerminalOpen(next)
+
+  const stopApplication = () => {
+    if (stopAppRef.current) {
+      stopAppRef.current()
+    }
+    fetch('/api/maven/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Aether-Build': 'maven' },
+      body: JSON.stringify({})
+    }).catch(() => {})
+    setAppRunning(false)
   }
   const outline = useMemo(() => fileOutline(current?.path, current?.content), [current])
   const [editorFolds, setEditorFolds] = useState(new Set())
@@ -1996,6 +2286,90 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       return { ...previous, [breakpointWorkspace]: { ...files, [active]: next } }
     })
   }
+
+  const handleNavigateSymbol = useCallback(async (fileNameOrPath, symbolName, targetOffset = 0) => {
+    let targetPath = null
+    const baseName = fileNameOrPath ? fileNameOrPath.split(/[/\\]/).pop() : null
+
+    // 1. Check open tabs
+    if (baseName) {
+      const tab = tabs.find((t) =>
+        t.path.endsWith('/' + baseName) ||
+        t.path === baseName ||
+        (!baseName.endsWith('.java') && t.path.endsWith('/' + baseName + '.java'))
+      )
+      if (tab) targetPath = tab.path
+    }
+
+    // 2. Check launch catalog applications
+    if (!targetPath && baseName && launchCatalog.applications?.length) {
+      const app = launchCatalog.applications.find(
+        (a) => a.path.endsWith('/' + baseName) ||
+               (!baseName.endsWith('.java') && a.path.endsWith('/' + baseName + '.java')) ||
+               (symbolName && a.className?.endsWith('.' + symbolName))
+      )
+      if (app) targetPath = app.path
+    }
+
+    // 3. Check server workspace files
+    if (!targetPath && baseName) {
+      try {
+        const res = await fetch('/api/files')
+        const data = await res.json()
+        if (Array.isArray(data?.files)) {
+          targetPath = data.files.find((f) =>
+            f.endsWith('/' + baseName) ||
+            f === baseName ||
+            (!baseName.endsWith('.java') && f.endsWith('/' + baseName + '.java'))
+          )
+        }
+      } catch {}
+    }
+
+    // 4. If targetPath still not resolved, search via /api/search for symbol declaration across project
+    if (!targetPath && (symbolName || baseName)) {
+      const query = symbolName || (baseName ? baseName.replace(/\.java$/, '') : null)
+      if (query) {
+        try {
+          const sRes = await fetch(`/api/search?q=${encodeURIComponent(query)}`)
+          const sData = await sRes.json()
+          if (Array.isArray(sData?.results) && sData.results.length > 0) {
+            // Priority 1: Java file declaring this class or method
+            const declMatch = sData.results.find((r) =>
+              r.path.endsWith('.java') &&
+              new RegExp(`(?:class|interface|record|enum|void|[\\w$.<>\\[\\]]+)\\s+${query}\\b`).test(r.preview)
+            ) || sData.results.find((r) => r.path.endsWith('.java'))
+            if (declMatch) targetPath = declMatch.path
+          }
+        } catch {}
+      }
+    }
+
+    // 5. Browser/Virtual files fallback
+    if (!targetPath && virtualFiles) {
+      const keys = Object.keys(virtualFiles)
+      if (baseName) {
+        targetPath = keys.find((k) =>
+          k.endsWith('/' + baseName) ||
+          k === baseName ||
+          (!baseName.endsWith('.java') && k.endsWith('/' + baseName + '.java'))
+        )
+      }
+      if (!targetPath && symbolName) {
+        targetPath = keys.find((k) => k.endsWith('.java') && virtualFiles[k]?.includes(symbolName))
+      }
+    }
+
+    if (targetPath) {
+      await openFile(targetPath)
+      const symToJump = symbolName || (baseName ? baseName.replace(/\.java$/, '') : null)
+      setTimeout(() => {
+        setEditorJump({ path: targetPath, symbol: symToJump, offset: targetOffset || 0 })
+      }, 80)
+      return true
+    }
+    return false
+  }, [tabs, launchCatalog.applications, virtualFiles, openFile])
   const toggleStructure = () => {
     setStructureOpen((previous) => !previous)
     setLeftOpen(true)
@@ -2177,15 +2551,22 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     setMenuOpen(false)
     setActiveMenu(null)
     setNewMenuOpen(false)
-    const width = node.type === 'file' ? 322 : 230
-    const height = node.type === 'file' ? 370 : 220
-    setProjectMenu({ node, x: Math.max(4, Math.min(event.clientX, window.innerWidth - width)),
-      y: Math.max(4, Math.min(event.clientY, window.innerHeight - height)) })
+    setContextSubmenu(null)
+    const width = 295
+    const height = node?.type === 'dir' ? 560 : 420
+    setProjectMenu({
+      node,
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 10)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 10))
+    })
   }
   useEffect(() => {
     if (!projectMenu) return
     const dismiss = (event) => {
-      if (event.type === 'keydown' ? event.key === 'Escape' : !event.target.closest('.project-context-menu')) setProjectMenu(null)
+      if (event.type === 'keydown' ? event.key === 'Escape' : !event.target.closest('.project-context-menu, .project-context-submenu')) {
+        setProjectMenu(null)
+        setContextSubmenu(null)
+      }
     }
     document.addEventListener('pointerdown', dismiss)
     document.addEventListener('keydown', dismiss)
@@ -2245,14 +2626,23 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       window.removeEventListener('resize', dismiss)
     }
   }, [projectViewPosition])
-  const confirmProjectFileDelete = (path) => {
+  const confirmProjectFileDelete = (nodeOrPath) => {
+    const isNode = typeof nodeOrPath === 'object' && nodeOrPath !== null
+    const path = isNode ? nodeOrPath.path : nodeOrPath
+    const isDir = isNode ? nodeOrPath.type === 'dir' : false
     const tab = tabs.find((item) => item.path === path)
-    setPendingDelete({ path, workspace: workspaceRef.current, unsaved: Boolean(tab && isDirty(tab)) })
+    const hasUnsavedChildren = isDir && tabs.some((t) => t.path.startsWith(path + '/') && isDirty(t))
+    setPendingDelete({
+      path,
+      type: isDir ? 'dir' : 'file',
+      workspace: workspaceRef.current,
+      unsaved: Boolean((tab && isDirty(tab)) || hasUnsavedChildren)
+    })
   }
   useEffect(() => {
     if (pendingDelete && !deleteDialog.current?.open) deleteDialog.current?.showModal()
   }, [pendingDelete])
-  const deleteProjectFile = async ({ path, workspace: openedWorkspace }) => {
+  const deleteProjectFile = async ({ path, type = 'file', workspace: openedWorkspace }) => {
     setPendingDelete(null)
     if (workspaceRef.current !== openedWorkspace) return
     try {
@@ -2263,25 +2653,47 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       })
       const data = await response.json().catch(() => null)
       if (!response.ok || data?.ok !== true) {
-        throw new Error(data?.error || (response.status === 404 ? 'Delete is unavailable. Restart the Aether backend.' : 'Could not delete the file.'))
+        throw new Error(data?.error || (response.status === 404 ? 'Delete is unavailable. Restart the Aether backend.' : `Could not delete the ${type === 'dir' ? 'directory' : 'file'}.`))
       }
       if (workspaceRef.current !== openedWorkspace) return
-      const removeFile = (node) => {
-        if (!node?.children || (node.path && !path.startsWith(node.path + '/'))) return node
-        return { ...node, children: node.children.filter((child) => child.path !== path).map(removeFile) }
+      const removeTarget = (node) => {
+        if (!node?.children) return node
+        return {
+          ...node,
+          children: node.children
+            .filter((child) => child.path !== path && !child.path.startsWith(path + '/'))
+            .map(removeTarget)
+        }
       }
-      setTree(removeFile)
-      setTabs((previous) => previous.filter((item) => item.path !== path))
-      setActive((previous) => previous === path ? '' : previous)
+      setTree(removeTarget)
+      setTabs((previous) => previous.filter((item) => item.path !== path && !item.path.startsWith(path + '/')))
+      setActive((previous) => (previous === path || previous.startsWith(path + '/')) ? '' : previous)
       setDirty((previous) => {
         const next = { ...previous }
-        delete next[path]
+        for (const k of Object.keys(next)) {
+          if (k === path || k.startsWith(path + '/')) delete next[k]
+        }
         return next
       })
-      setHits((previous) => previous.filter((item) => item.path !== path))
+      setOpenDirs((previous) => {
+        const next = new Set(previous)
+        for (const dir of next) {
+          if (dir === path || dir.startsWith(path + '/')) next.delete(dir)
+        }
+        return next
+      })
+      setHits((previous) => previous.filter((item) => item.path !== path && !item.path.startsWith(path + '/')))
+      setFileErrors((previous) => {
+        const next = new Set(previous)
+        for (const errPath of next) {
+          if (errPath === path || errPath.startsWith(path + '/')) next.delete(errPath)
+        }
+        return next
+      })
       try {
         for (const key of [lastFileKey(openedWorkspace.root), 'aether.lastFile:' + openedWorkspace.root]) {
-          if (localStorage.getItem(key) === path) localStorage.removeItem(key)
+          const val = localStorage.getItem(key)
+          if (val === path || val?.startsWith(path + '/')) localStorage.removeItem(key)
         }
       } catch {}
       setImportNotice('')
@@ -2328,25 +2740,182 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       ['Edit Run/Debug Configuration…', () => { setLaunchTarget(contextMain.path); showRun() }, 'execute']
     ]] : [])
   ] : []
+  const dirTargetName = useMemo(() => {
+    if (!contextNode?.path) return workspace.root ? workspace.root.split(/[/\\]/).pop() : 'Project'
+    const pkgMatch = /(?:^|\/)src\/(?:main|test)\/java\/(.+)$/.exec(contextNode.path)
+    if (pkgMatch) {
+      return pkgMatch[1].replace(/[/\\]/g, '.')
+    }
+    return contextNode.name || contextNode.path.split(/[/\\]/).pop() || 'Directory'
+  }, [contextNode, workspace.root])
+
+  const renameProjectItem = async (node) => {
+    if (!node?.path) return
+    const currentName = node.name || node.path.split(/[/\\]/).pop()
+    const newName = window.prompt(`Rename '${currentName}' to:`, currentName)
+    if (!newName || newName === currentName) return
+    const oldPath = node.path
+    const parent = oldPath.split(/[/\\]/).slice(0, -1).join('/')
+    const newPath = parent ? `${parent}/${newName}` : newName
+    try {
+      const response = await fetch('/api/file/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldPath, newPath, project: workspaceRef.current?.root })
+      })
+      if (!response.ok) {
+        const err = await response.json().catch(() => null)
+        throw new Error(err?.error || 'Could not rename.')
+      }
+      reloadMavenTree()
+      setImportNotice(`Renamed to '${newName}'.`)
+    } catch (e) {
+      setImportNotice(e.message)
+    }
+  }
+
+  const getSubmenuItems = (submenuKey, dir) => {
+    switch (submenuKey) {
+      case 'new':
+        return [
+          { label: 'Java Class', action: () => createProjectItem('Java Class', dir, '.java', (name, folder) => {
+            const pkg = /(?:^|\/)src\/(?:main|test)\/java\/(.+)$/.exec(folder)?.[1]?.replaceAll('/', '.')
+            return (pkg ? `package ${pkg};\n\n` : '') + `public class ${name.slice(0, -5)} {\n}\n`
+          }), icon: 'java' },
+          { label: 'File', action: () => createProjectItem('File', dir), icon: 'file' },
+          { label: 'Directory', action: () => createProjectItem('Directory', dir), icon: 'folder' },
+          { label: 'Package', action: () => createProjectItem('Directory', dir), icon: 'folder' },
+          { label: 'HTML File', action: () => createProjectItem('HTML File', dir, '.html', () => '<!doctype html>\n<html lang="en">\n<head><title>New page</title></head>\n<body></body>\n</html>\n') },
+          { label: 'Kotlin Class/File', action: () => createProjectItem('Kotlin File', dir, '.kt') },
+          { label: 'HTTP Request', action: () => createProjectItem('HTTP Request', dir, '.http') },
+          { label: 'Resource Bundle', action: () => createProjectItem('Resource Bundle', dir, '.properties') }
+        ]
+      case 'analyze':
+        return [
+          { label: 'Inspect Code…', action: () => setImportNotice('Inspecting code…') },
+          { label: 'Dependencies…', action: () => { setMavenOpen(true); toggleMaven() } },
+          { label: 'Analyze Stack Trace or Thread Dump…', action: () => setImportNotice('Stack trace analyzer') }
+        ]
+      case 'refactor':
+        return [
+          { label: 'Rename…', shortcut: 'Shift+F6', action: () => renameProjectItem(contextNode) },
+          { label: 'Move Directory…', shortcut: 'F6', action: () => setImportNotice('Move directory: ' + (contextNode?.name || 'folder')) },
+          { label: 'Copy Directory…', shortcut: 'F5', action: () => setImportNotice('Copy directory: ' + (contextNode?.name || 'folder')) }
+        ]
+      case 'bookmarks':
+        return [
+          { label: 'Add Bookmark', shortcut: 'F11', action: () => setImportNotice('Bookmarked ' + (contextNode?.name || 'folder')) },
+          { label: 'Show Bookmarks', shortcut: 'Shift+F11', action: () => setImportNotice('Bookmarks list') }
+        ]
+      case 'openin':
+        return [
+          { label: 'Terminal', action: () => { setTerminalOpen(true); setImportNotice('Opened Terminal in ' + (contextNode?.name || 'folder')) } },
+          { label: 'File Manager / Explorer', action: () => { navigator.clipboard.writeText(contextNode?.path || ''); setImportNotice('Path copied to open in Explorer: ' + (contextNode?.path || '')) } }
+        ]
+      case 'localhistory':
+        return [
+          { label: 'Show History', action: () => { setVcsOpen(true); setImportNotice('Showing history for ' + (contextNode?.name || 'folder')) } },
+          { label: 'Put Label…', action: () => setImportNotice('Label added.') }
+        ]
+      case 'markas':
+        return [
+          { label: 'Sources Root', action: () => setImportNotice('Marked as Sources Root') },
+          { label: 'Generated Sources Root', action: () => setImportNotice('Marked as Generated Sources Root') },
+          { label: 'Resources Root', action: () => setImportNotice('Marked as Resources Root') },
+          { label: 'Test Sources Root', action: () => setImportNotice('Marked as Test Sources Root') },
+          { label: 'Excluded', action: () => setImportNotice('Marked as Excluded') }
+        ]
+      default:
+        return []
+    }
+  }
+
   const fileContext = contextNode?.type === 'file'
+  const isDirContext = contextNode?.type === 'dir'
   const fileActionGroups = fileContext ? [
     [
-      ['Open File', () => openFile(contextNode.path), 'file'],
-      ['Copy Path/Reference…', () => navigator.clipboard.writeText(contextNode.path).catch(() => setImportNotice('Could not copy the path.')), 'file']
+      { label: 'Open File', shortcut: 'Enter', action: () => openFile(contextNode.path), icon: 'file' },
+      { label: 'Cut', shortcut: 'Ctrl+X', action: () => { navigator.clipboard.writeText(contextNode.path); setImportNotice('Cut: ' + contextNode.name) }, icon: 'file' },
+      { label: 'Copy', shortcut: 'Ctrl+C', action: () => { navigator.clipboard.writeText(contextNode.path); setImportNotice('Copied: ' + contextNode.name) }, icon: 'file' },
+      { label: 'Copy Path/Reference…', action: () => navigator.clipboard.writeText(contextNode.path).catch(() => setImportNotice('Could not copy the path.')), icon: 'file' },
+      { label: 'Paste', shortcut: 'Ctrl+V', action: () => setImportNotice('Paste') },
+      { label: 'Paste from History…', shortcut: 'Ctrl+Shift+V', action: () => setImportNotice('Clipboard history') }
     ],
-    [['Delete…', canCreateInProject ? () => confirmProjectFileDelete(contextNode.path) : null, 'trash']],
+    [
+      { label: 'Find Usages', shortcut: 'Alt+F7', action: () => setSearchEverywhere(true) },
+      { label: 'Find in Files…', shortcut: 'Ctrl+Shift+F', action: () => setSearchEverywhere(true), icon: 'search' },
+      { label: 'Replace in Files…', shortcut: 'Ctrl+Shift+R', action: () => setSearchEverywhere(true) }
+    ],
+    [
+      { label: 'Rename…', shortcut: 'Shift+F6', action: () => renameProjectItem(contextNode) }
+    ],
+    [
+      { label: 'Reformat Code', shortcut: 'Ctrl+Alt+L', action: () => setImportNotice('Format ' + contextNode.name) },
+      { label: 'Optimize Imports', shortcut: 'Ctrl+Alt+O', action: () => setImportNotice('Optimize imports in ' + contextNode.name) },
+      { label: 'Delete…', shortcut: 'Delete', action: () => confirmProjectFileDelete(contextNode), icon: 'trash' }
+    ],
     ...(contextMain ? [[
-      [`Run '${contextMain.className.split('.').at(-1)}.main()'`, () => executeApplication(false, contextMain), 'play'],
-      [`Debug '${contextMain.className.split('.').at(-1)}.main()'`, () => executeApplication(true, contextMain), 'debug'],
-      ['Edit Run/Debug Configuration…', () => { setLaunchTarget(contextMain.path); showRun() }, 'execute']
+      { label: `Run '${contextMain.className.split('.').at(-1)}.main()'`, shortcut: 'Shift+F10', action: () => executeApplication(false, contextMain), icon: 'play' },
+      { label: `Debug '${contextMain.className.split('.').at(-1)}.main()'`, shortcut: 'Shift+F9', action: () => executeApplication(true, contextMain), icon: 'debug' },
+      { label: 'Edit Run/Debug Configuration…', action: () => { setLaunchTarget(contextMain.path); showRun() }, icon: 'execute' }
     ]] : []),
-    [['Reload from Disk', canCreateInProject ? () => reloadProjectFile(contextNode.path) : null, 'reload']]
+    [
+      { label: 'Reload from Disk', action: () => reloadProjectFile(contextNode.path), icon: 'reload' }
+    ]
   ] : []
+
+  const dirActionGroups = isDirContext ? [
+    // Group 1: New
+    [
+      { label: 'New', submenu: 'new', icon: 'file' }
+    ],
+    // Group 2: Clipboard
+    [
+      { label: 'Cut', shortcut: 'Ctrl+X', action: () => { navigator.clipboard.writeText(contextNode.path); setImportNotice('Cut: ' + (contextNode.name || contextNode.path)) } },
+      { label: 'Copy', shortcut: 'Ctrl+C', action: () => { navigator.clipboard.writeText(contextNode.path); setImportNotice('Copied: ' + (contextNode.name || contextNode.path)) } },
+      { label: 'Copy Path/Reference…', action: () => { navigator.clipboard.writeText(contextNode.path); setImportNotice('Copied path: ' + contextNode.path) }, icon: 'file' },
+      { label: 'Paste', shortcut: 'Ctrl+V', action: () => { setImportNotice('Paste into ' + (contextNode.name || 'folder')) } },
+      { label: 'Paste from History…', shortcut: 'Ctrl+Shift+V', action: () => { setImportNotice('Clipboard history') } }
+    ],
+    // Group 3: Search / Analyze
+    [
+      { label: 'Find Usages', shortcut: 'Alt+F7', action: () => setSearchEverywhere(true) },
+      { label: 'Find in Files…', shortcut: 'Ctrl+Shift+F', action: () => setSearchEverywhere(true), icon: 'search' },
+      { label: 'Replace in Files…', shortcut: 'Ctrl+Shift+R', action: () => setSearchEverywhere(true) },
+      { label: 'Analyze', submenu: 'analyze' }
+    ],
+    // Group 4: Refactor / Bookmarks
+    [
+      { label: 'Rename…', shortcut: 'Shift+F6', action: () => renameProjectItem(contextNode) },
+      { label: 'Refactor', submenu: 'refactor' },
+      { label: 'Bookmarks', submenu: 'bookmarks' }
+    ],
+    // Group 5: Code / Maintenance / Delete
+    [
+      { label: 'Reformat Code', shortcut: 'Ctrl+Alt+L', action: () => setImportNotice('Reformat code in ' + (contextNode.name || 'folder')) },
+      { label: 'Optimize Imports', shortcut: 'Ctrl+Alt+O', action: () => setImportNotice('Optimize imports in ' + (contextNode.name || 'folder')) },
+      { label: 'Delete…', shortcut: 'Delete', action: () => confirmProjectFileDelete(contextNode), icon: 'trash' }
+    ],
+    // Group 6: Build / System
+    [
+      { label: `Rebuild '${dirTargetName}'`, shortcut: 'Ctrl+Shift+F9', action: () => { setMavenOpen(true); executeLifecycle?.('compile') } },
+      { label: 'Open In', submenu: 'openin' },
+      { label: 'Local History', submenu: 'localhistory' },
+      { label: 'Repair IDE on File', action: () => { reloadMavenTree(); setImportNotice('Refreshed IDE index.') } },
+      { label: 'Reload from Disk', action: () => reloadMavenTree().catch(() => setImportNotice('Could not reload the project.')), icon: 'reload' }
+    ],
+    // Group 7: Compare / Mark
+    [
+      { label: 'Compare With…', shortcut: 'Ctrl+D', action: () => setImportNotice('Compare ' + (contextNode.name || 'folder')) },
+      { label: 'Mark Directory As', submenu: 'markas' }
+    ]
+  ] : []
+
   const contextActions = contextNode ? [
-    [contextNode.type === 'dir' ? 'Find in Files…' : 'Open File', contextNode.type === 'dir' ? () => setSearchEverywhere(true) : () => openFile(contextNode.path)],
-    ['Copy Path', () => navigator.clipboard.writeText(contextNode.path || workspace.root).catch(() => setImportNotice('Could not copy the path.'))],
-    ['Reload from Disk', canCreateInProject ? () => reloadMavenTree().catch(() => setImportNotice('Could not reload the project.')) : null],
-    ...(contextNode.path ? [] : [['Maven', canCreateInProject ? toggleMaven : null], ['Close Project', () => closeProject()]])
+    [{ label: contextNode.type === 'dir' ? 'Find in Files…' : 'Open File', action: contextNode.type === 'dir' ? () => setSearchEverywhere(true) : () => openFile(contextNode.path) }],
+    [{ label: 'Copy Path', action: () => navigator.clipboard.writeText(contextNode.path || workspace.root).catch(() => setImportNotice('Could not copy the path.')) }],
+    [{ label: 'Reload from Disk', action: canCreateInProject ? () => reloadMavenTree().catch(() => setImportNotice('Could not reload the project.')) : null }],
+    ...(contextNode.path ? [] : [[{ label: 'Maven', action: canCreateInProject ? toggleMaven : null }], [{ label: 'Close Project', action: () => closeProject() }]])
   ] : []
 
   const menus = {
@@ -2370,54 +2939,142 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     Build: [['Maven Lifecycle', toggleMaven]],
     Run: [['Run Application…', () => executeApplication(false)], ['Run / Debug Configurations…', showRun]],
     Tools: [['Maven Terminal', toggleTerminal], ['Agent', () => switchMode('agent')], ['Provider Keys…', () => setVaultOpen(true)]],
-    VCS: [['Commit', null]],
+    VCS: [
+      ['Commit… (Ctrl+K)', toggleCommitSide],
+      ['Git Log & Branches', () => { setVcsOpen(true); setMavenOpen(false) }],
+      ['Update Project (Pull) (Ctrl+T)', vcsState?.isRepo ? () => fetch('/api/vcs/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'pull' }) }).then(() => refreshVcsStatus()) : null],
+      ['Push… (Ctrl+Shift+K)', vcsState?.isRepo ? () => fetch('/api/vcs/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'push' }) }).then(() => refreshVcsStatus()) : null],
+      ['Fetch', vcsState?.isRepo ? () => fetch('/api/vcs/action', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'fetch' }) }).then(() => refreshVcsStatus()) : null]
+    ],
     Window: [['Toggle Project', toggleProject], ['Toggle Assistant', toggleAssistant]],
     Help: [['Install Aether…', () => setAppModalOpen(true)]]
   }
 
   return (
-    <div className={`app intellij-workbench mode-${mode} ${mavenOpen && mode !== 'chat' ? 'has-maven-panel' : ''}`}>
+    <div
+      className={`app intellij-workbench mode-${mode} ${(mavenOpen || vcsOpen || terminalOpen) && mode !== 'chat' ? 'has-maven-panel' : ''} ${isResizing === 'bottom' ? 'resizing-bottom' : ''}`}
+      style={{ '--bottom-h': `${bottomHeight}px` }}
+    >
       {pendingDelete && createPortal(
         <dialog ref={deleteDialog} className="java-config-dialog delete-file-dialog" aria-labelledby="delete-file-title" aria-describedby="delete-file-description"
           onCancel={(event) => { event.preventDefault(); setPendingDelete(null) }}>
           <header>
             <span className="delete-file-emblem" aria-hidden="true">
-              <span className="delete-art-sheet"><TreeIcon name="file" /></span>
+              <span className="delete-art-sheet"><TreeIcon name={pendingDelete.type === 'dir' ? 'folder' : 'file'} /></span>
               <span className="delete-art-bin"><TreeIcon name="trash" /></span>
             </span>
             <div>
-              <strong id="delete-file-title">Delete file?</strong>
-              <p id="delete-file-description">This will permanently remove the file from disk.</p>
+              <strong id="delete-file-title">Delete {pendingDelete.type === 'dir' ? 'directory' : 'file'}?</strong>
+              <p id="delete-file-description">This will permanently remove the {pendingDelete.type === 'dir' ? 'directory and all its contents' : 'file'} from disk.</p>
             </div>
             <details className="delete-file-help">
               <summary aria-label="About permanent deletion" title="About permanent deletion">?</summary>
-              <div>Deleting here skips the Recycle Bin. Choose Cancel to keep the file.</div>
+              <div>Deleting here skips the Recycle Bin. Choose Cancel to keep {pendingDelete.type === 'dir' ? 'the directory' : 'the file'}.</div>
             </details>
           </header>
           <div className="delete-file-message">
             <div className="delete-file-preview">
-              <TreeIcon name="file" />
+              <TreeIcon name={pendingDelete.type === 'dir' ? 'folder' : 'file'} />
               <div>
                 <strong>{pendingDelete.path.split('/').at(-1)}</strong>
                 {pendingDelete.path.includes('/') && <small>{pendingDelete.path.split('/').slice(0, -1).join('/')}</small>}
               </div>
             </div>
-            {pendingDelete.unsaved && <p className="delete-file-warning">Unsaved changes to this file will be lost.</p>}
+            {pendingDelete.unsaved && (
+              <p className="delete-file-warning">
+                {pendingDelete.type === 'dir'
+                  ? 'Unsaved changes to files inside this directory will be lost.'
+                  : 'Unsaved changes to this file will be lost.'}
+              </p>
+            )}
           </div>
           <footer>
             <button type="button" autoFocus title="Cancel" aria-label="Cancel" onClick={() => setPendingDelete(null)}><span aria-hidden="true">×</span></button>
-            <button type="button" className="delete-file-confirm" title="Delete file" aria-label="Delete file" onClick={() => void deleteProjectFile(pendingDelete)}><TreeIcon name="trash" /></button>
+            <button type="button" className="delete-file-confirm" title={`Delete ${pendingDelete.type === 'dir' ? 'directory' : 'file'}`} aria-label={`Delete ${pendingDelete.type === 'dir' ? 'directory' : 'file'}`} onClick={() => void deleteProjectFile(pendingDelete)}><TreeIcon name="trash" /></button>
           </footer>
         </dialog>, document.body
       )}
-      {contextNode && <div className={`project-context-menu ${fileContext ? 'file-context-menu' : ''}`} style={{ left: projectMenu.x, top: projectMenu.y }} aria-label={tabContext ? 'Editor tab actions' : fileContext ? 'File actions' : 'Project actions'}>
-        {!tabContext && renderNewMenu(contextNode.type === 'dir' ? contextNode.path : parentFolder(contextNode.path), true)}
-        {(tabContext ? tabActionGroups : fileContext ? fileActionGroups : [contextActions]).map((group, index) => <div className="context-action-group" key={index}>
-          {group.map(([label, action, icon]) => <button type="button" key={label} disabled={!action} onClick={() => { setProjectMenu(null); action() }}>
-            {icon && <TreeIcon name={icon} />}{label}
-          </button>)}
-        </div>)}
-      </div>}
+      {contextNode && (
+        <>
+          <div
+            className={`project-context-menu ${fileContext ? 'file-context-menu' : isDirContext ? 'dir-context-menu' : ''}`}
+            style={{ left: projectMenu.x, top: projectMenu.y }}
+            aria-label={tabContext ? 'Editor tab actions' : fileContext ? 'File actions' : isDirContext ? 'Directory actions' : 'Project actions'}
+          >
+            {(tabContext ? tabActionGroups : fileContext ? fileActionGroups : isDirContext ? dirActionGroups : [contextActions]).map((group, gIdx) => (
+              <div className="context-action-group" key={gIdx}>
+                {group.map((item, iIdx) => {
+                  const entry = Array.isArray(item) ? { label: item[0], action: item[1], icon: item[2], shortcut: item[3] } : item
+                  const hasSubmenu = Boolean(entry.submenu)
+                  const isSubmenuOpen = Boolean(entry.submenu && contextSubmenu?.key === entry.submenu)
+                  return (
+                    <button
+                      type="button"
+                      key={entry.label || iIdx}
+                      className={`project-context-menu-item ${isSubmenuOpen ? 'active' : ''}`}
+                      disabled={!entry.action && !hasSubmenu}
+                      onMouseEnter={(e) => {
+                        if (hasSubmenu) {
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          setContextSubmenu({ key: entry.submenu, top: rect.top })
+                        } else {
+                          setContextSubmenu(null)
+                        }
+                      }}
+                      onClick={(e) => {
+                        if (hasSubmenu) {
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          setContextSubmenu({ key: entry.submenu, top: rect.top })
+                        } else if (entry.action) {
+                          setProjectMenu(null)
+                          setContextSubmenu(null)
+                          entry.action()
+                        }
+                      }}
+                    >
+                      <span className="context-menu-label-wrap">
+                        {entry.icon && <TreeIcon name={entry.icon} />}
+                        <span>{entry.label}</span>
+                      </span>
+                      {entry.shortcut && <kbd className="context-menu-shortcut">{entry.shortcut}</kbd>}
+                      {hasSubmenu && <span className="context-menu-arrow" aria-hidden="true">›</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+
+          {contextSubmenu && (
+            <div
+              className="project-context-submenu"
+              style={{
+                left: projectMenu.x + 290 > window.innerWidth - 230 ? Math.max(8, projectMenu.x - 225) : projectMenu.x + 286,
+                top: Math.max(8, Math.min(contextSubmenu.top - 4, window.innerHeight - 300))
+              }}
+            >
+              {getSubmenuItems(contextSubmenu.key, contextNode.type === 'dir' ? contextNode.path : parentFolder(contextNode.path)).map((subItem, sIdx) => (
+                <button
+                  type="button"
+                  key={subItem.label || sIdx}
+                  className="project-context-menu-item"
+                  onClick={() => {
+                    setProjectMenu(null)
+                    setContextSubmenu(null)
+                    subItem.action?.()
+                  }}
+                >
+                  <span className="context-menu-label-wrap">
+                    {subItem.icon && <TreeIcon name={subItem.icon} />}
+                    <span>{subItem.label}</span>
+                  </span>
+                  {subItem.shortcut && <kbd className="context-menu-shortcut">{subItem.shortcut}</kbd>}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
       <header
         ref={topbarRef}
         onClickCapture={(event) => {
@@ -2496,6 +3153,15 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             ))}
           </div>
         </details>
+        {mode !== 'chat' && (
+          <VcsBranchWidget
+            workspace={!webDirHandle && !virtualFiles ? workspace.root : null}
+            vcsState={vcsState}
+            onRefresh={refreshVcsStatus}
+            onOpenCommit={() => { setLeftOpen(true); setCommitSideOpen(true) }}
+            onOpenGitLog={() => { setVcsOpen(true); setMavenOpen(false) }}
+          />
+        )}
         <div className="modes" role="group" aria-label="Workspace views">
           <button aria-pressed={!pulseMode && mode === 'editor'} className={!pulseMode && mode === 'editor' ? 'on' : ''} onClick={() => { selectPulseView(null); switchMode('editor') }}>IDE</button>
           <button aria-pressed={!pulseMode && mode === 'agent'} className={!pulseMode && mode === 'agent' ? 'on' : ''} onClick={() => { selectPulseView(null); switchMode('agent') }}>Agent</button>
@@ -2516,8 +3182,21 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               {launchCatalog.applications.map((item) => <option key={item.path} value={item.path}>{item.className.split('.').at(-1)}</option>)}
               <option value=":configure">Edit Configurations…</option>
             </select>
-            <button className="ghost run-toggle" onClick={() => executeApplication(false)} aria-label="Run application" title="Run">▶</button>
-            <button className="ghost run-toggle" onClick={() => executeApplication(true)} disabled={!selectedLaunch} aria-label="Debug application" title="Debug">♧</button>
+            <button className="ghost run-toggle" onClick={() => executeApplication(false)} aria-label="Run application" title="Run (Shift+F10)">
+              <TreeIcon name="play" />
+            </button>
+            <button className="ghost run-toggle" onClick={() => executeApplication(true)} disabled={!selectedLaunch} aria-label="Debug application" title="Debug (Shift+F9)">
+              <TreeIcon name="debug" />
+            </button>
+            <button
+              className={`ghost run-toggle stop-toggle ${appRunning ? 'is-running' : ''}`}
+              onClick={stopApplication}
+              disabled={!appRunning}
+              aria-label="Stop running application"
+              title={appRunning ? 'Stop (Ctrl+F2)' : 'Stop (no application running)'}
+            >
+              <TreeIcon name="stop" />
+            </button>
             <button type="button" className="ghost run-toggle" onClick={showRun} aria-label="Edit Run/Debug configurations" title="Edit Run/Debug configurations">⋮</button>
           </div></>}
           {mode !== 'chat' && <button className="ghost workbench-icon-button" title="Search Everywhere (Double Shift)" aria-label="Search Everywhere" onClick={() => setSearchEverywhere(true)}><WorkbenchIcon name="search" /></button>}
@@ -2761,19 +3440,107 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         }}
       >
         <nav className="workbench-strip project-strip" aria-label="Project tools">
+          <button type="button" aria-label="Toggle Project" title="Project (Ctrl+B)" aria-pressed={leftOpen && !commitSideOpen} onClick={toggleProject}>▤</button>
+          <button type="button" aria-label="Commit" title="Commit (Ctrl+K)" aria-pressed={leftOpen && commitSideOpen} onClick={toggleCommitSide}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="4" />
+              <line x1="2" y1="12" x2="8" y2="12" />
+              <line x1="16" y1="12" x2="22" y2="12" />
+            </svg>
+          </button>
           <button type="button" aria-label="Structure" title="Structure" aria-pressed={structureOpen} onClick={toggleStructure}>▥</button>
-          <button type="button" aria-label="Toggle Project" title="Project (Ctrl+B)" aria-pressed={leftOpen} onClick={toggleProject}>▤</button>
           <button type="button" aria-label="Search Everywhere" title="Search Everywhere" onClick={() => setSearchEverywhere(true)}>⌕</button>
           <button type="button" aria-label="Settings" title="Settings" onClick={() => setSettingsOpen(true)}>⚙</button>
         </nav>
         <nav className="workbench-strip tools-strip" aria-label="Workspace tools">
-          <button type="button" aria-label="Toggle AI Chat" title="AI Chat" aria-pressed={rightOpen && mode === 'editor'} onClick={toggleAssistant}>◫</button>
+          <button type="button" aria-label="Toggle AI Chat" title="AI Chat" aria-pressed={rightOpen && mode === 'editor'} onClick={toggleAssistant}>
+            <WorkbenchIcon name="ai" />
+          </button>
           <button type="button" aria-label="Toggle Maven" title="Maven" aria-pressed={mavenSideOpen && !rightOpen} onClick={toggleMaven}>m</button>
-          </nav>
+        </nav>
         <nav className="workbench-strip bottom-tools-strip" aria-label="Bottom tools">
-          <button type="button" aria-label="Build" title="Build Output" onClick={() => { setTerminalOpen(false); setMavenOpen(true) }}>⚒</button>
-          <button type="button" aria-label="Maven Terminal" title="Maven Terminal" aria-pressed={mavenOpen && terminalOpen} onClick={toggleTerminal}>›_</button>
-          <button type="button" aria-label="Run Application" title="Run Application" onClick={showRun}>▷</button>
+          <button
+            type="button"
+            aria-label="Run (Alt+4)"
+            title="Run Application (Alt+4)"
+            className={mavenOpen && !terminalOpen && !vcsOpen && mavenMode === 'run' ? 'active' : ''}
+            aria-pressed={mavenOpen && !terminalOpen && !vcsOpen && mavenMode === 'run'}
+            onClick={() => {
+              if (mavenOpen && !terminalOpen && !vcsOpen && mavenMode === 'run') {
+                setMavenOpen(false)
+              } else {
+                setTerminalOpen(false)
+                setVcsOpen(false)
+                setMavenOpen(true)
+                setMavenMode('run')
+                if (selectedLaunch) void executeApplication(false, selectedLaunch)
+              }
+            }}
+          >
+            ▷
+          </button>
+          <button
+            type="button"
+            aria-label="Debug (Alt+5)"
+            title="Debug Application (Alt+5)"
+            className={mavenOpen && !terminalOpen && !vcsOpen && mavenMode === 'debug' ? 'active' : ''}
+            aria-pressed={mavenOpen && !terminalOpen && !vcsOpen && mavenMode === 'debug'}
+            onClick={() => {
+              if (mavenOpen && !terminalOpen && !vcsOpen && mavenMode === 'debug') {
+                setMavenOpen(false)
+              } else {
+                setTerminalOpen(false)
+                setVcsOpen(false)
+                setMavenOpen(true)
+                setMavenMode('debug')
+                if (selectedLaunch) void executeApplication(true, selectedLaunch)
+              }
+            }}
+          >
+            <TreeIcon name="debug" />
+          </button>
+          <button
+            type="button"
+            aria-label="Build Output"
+            title="Build Output"
+            className={mavenOpen && !terminalOpen && !vcsOpen && mavenMode === 'build' ? 'active' : ''}
+            aria-pressed={mavenOpen && !terminalOpen && !vcsOpen && mavenMode === 'build'}
+            onClick={() => {
+              if (mavenOpen && !terminalOpen && !vcsOpen && mavenMode === 'build') {
+                setMavenOpen(false)
+              } else {
+                setTerminalOpen(false)
+                setVcsOpen(false)
+                setMavenOpen(true)
+                setMavenMode('build')
+              }
+            }}
+          >
+            ⚒
+          </button>
+          <button
+            type="button"
+            aria-label="Terminal (Alt+F12)"
+            title="Terminal (Alt+F12)"
+            aria-pressed={terminalOpen}
+            onClick={toggleTerminal}
+          >
+            ›_
+          </button>
+          <button
+            type="button"
+            aria-label="Git Version Control (Alt+9)"
+            title="Git Version Control (Alt+9)"
+            aria-pressed={vcsOpen}
+            onClick={toggleVcsLog}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="6" y1="3" x2="6" y2="15" />
+              <circle cx="18" cy="6" r="3" />
+              <circle cx="6" cy="18" r="3" />
+              <path d="M18 9a9 9 0 0 1-9 9" />
+            </svg>
+          </button>
         </nav>
         {!leftOpen && (
           <button
@@ -2794,6 +3561,18 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           </button>
         )}
         <aside className="side">
+          {commitSideOpen ? (
+            <VcsCommitPanel
+              workspace={!webDirHandle && !virtualFiles ? workspace.root : null}
+              vcsState={vcsState}
+              onRefresh={refreshVcsStatus}
+              onOpenFile={openFile}
+              onClose={() => setCommitSideOpen(false)}
+              onOpenLog={() => { setVcsOpen(true); setMavenOpen(false) }}
+              onFileChanged={() => { if (workspace.root) void refreshTree() }}
+            />
+          ) : (
+            <>
           <div className="side-head">
             {workspace.root ? (
               <>
@@ -2884,6 +3663,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                   onProjectMenu={openProjectMenu}
                   compactPackages={compactPackages}
                   foldersFirst={foldersFirst}
+                  fileErrors={fileErrors}
                 />
               ) : !workspace.root ? (
                 <div className="no-project-box">
@@ -2896,7 +3676,17 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             </div>
           )}
           {structureOpen && (
-            <section className="structure-tool" aria-label="Structure">
+            <section className="structure-tool" aria-label="Structure" style={{ '--structure-h': `${structureHeight}px` }}>
+              <div
+                className={`resizer-handle top ${isResizing === 'structure' ? 'active' : ''}`}
+                onMouseDown={startResizeStructure}
+                onTouchStart={handleTouchStructure}
+                onDoubleClick={() => {
+                  setStructureHeight(220)
+                  try { localStorage.setItem('aether.structure_height', '220') } catch {}
+                }}
+                title="Drag to resize Structure panel (Double-click to reset)"
+              />
               <header className="structure-header">
                 <div className="structure-title-row">
                   <span className="structure-title">Structure</span>
@@ -3038,6 +3828,8 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               </div>
             </section>
           )}
+            </>
+          )}
           {leftOpen && (
             <div
               className={`resizer-handle left ${isResizing === 'left' ? 'active' : ''}`}
@@ -3047,7 +3839,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 setLeftWidth(260)
                 try { localStorage.setItem('aether.left_width', '260') } catch {}
               }}
-              title="Drag to resize file tree (Double-click to reset)"
+              title="Drag to resize sidebar (Double-click to reset)"
             />
           )}
         </aside>
@@ -3481,19 +4273,23 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                   {visibleTabs.map((tab) => {
                     const name = tab.path.split('/').pop()
                     const selected = tab.path === active
+                    const hasError = fileErrors.has(tab.path)
                     return (
-                      <div key={tab.path} className={`tab editor-tab ${selected ? 'on' : ''}`} onContextMenu={(event) => {
+                      <div key={tab.path} className={`tab editor-tab ${selected ? 'on' : ''} ${hasError ? 'tab-has-error' : ''}`} onContextMenu={(event) => {
                         openProjectMenu(event, { path: tab.path, type: 'file' })
                         setProjectMenu((previous) => ({ ...previous, tab: true }))
                       }}>
                         <button
                           type="button"
                           className="editor-tab-label"
-                          title={tab.path}
+                          title={hasError ? `${tab.path} (has compilation errors)` : tab.path}
                           aria-current={selected ? 'true' : undefined}
                           onClick={() => { setActive(tab.path); setEditorNotice('') }}
                         >
-                          {name}{isDirty(tab) ? ' ●' : ''}
+                          <span className={`project-tree-icon ${fileIconName(name)}`}><TreeIcon name={fileIconName(name)} /></span>
+                          <span style={{ color: hasError ? '#ff7b72' : undefined, textDecoration: hasError ? 'underline wavy #f85149 1px' : undefined }}>
+                            {name}{isDirty(tab) ? ' ●' : ''}{hasError ? ' ⚠️' : ''}
+                          </span>
                         </button>
                         <button
                           type="button"
@@ -3523,7 +4319,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                   </> : (tabPopup.kind === 'hidden' ? hiddenTabs.map((tab) => tab.path)
                     : [...new Set([active, ...tabs.map((tab) => tab.path), ...closedEditorFiles.filter((item) => item.root === workspace.root).map((item) => item.path)].filter(Boolean))]
                   ).map((path, index) => <button type="button" key={path} autoFocus={index === 0} title={path} onClick={() => selectPopupFile(path)}>
-                    <TreeIcon name={path.endsWith('.java') ? 'java' : 'file'} />
+                    <TreeIcon name={fileIconName(path.split('/').at(-1))} />
                     <span>{path.split('/').at(-1)}</span>
                   </button>)}
                 </div>, document.body)}
@@ -3575,6 +4371,8 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     <div className="editor-split-wrap">
                       <CodeEditor
                         jump={editorJump}
+                        applications={launchCatalog.applications}
+                        onNavigate={handleNavigateSymbol}
                         mainLine={activeMain ? outline.find((item) => item.runnable)?.line : undefined}
                         onRunMain={activeMain ? () => executeApplication(false, activeMain) : undefined}
                         onDebugMain={activeMain ? () => executeApplication(true, activeMain) : undefined}
@@ -3588,6 +4386,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         outline={outline}
                         externalFoldedLines={editorFolds}
                         onExternalToggleFold={toggleEditorFold}
+                        onValidationChange={handleValidationChange}
                       />
                       <div className="editor-split-divider" />
                       <div className="editor-md-reader editor-split-right">
@@ -3600,6 +4399,8 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       breakpointLines={projectBreakpoints[current.path]}
                       onToggleBreakpoint={toggleBreakpoint}
                       jump={editorJump}
+                      applications={launchCatalog.applications}
+                      onNavigate={handleNavigateSymbol}
                       mainLine={activeMain ? outline.find((item) => item.runnable)?.line : undefined}
                       onRunMain={activeMain ? () => executeApplication(false, activeMain) : undefined}
                       onDebugMain={activeMain ? () => executeApplication(true, activeMain) : undefined}
@@ -3613,6 +4414,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       outline={outline}
                       externalFoldedLines={editorFolds}
                       onExternalToggleFold={toggleEditorFold}
+                      onValidationChange={handleValidationChange}
                     />
                   )}
                   <div className="editor-bar">
@@ -3667,10 +4469,22 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
 
         {mavenSideOpen && !rightOpen && (
           <aside className="maven-tool-window" aria-label="Maven">
+            <div
+              className={`resizer-handle right ${isResizing === 'right' ? 'active' : ''}`}
+              onMouseDown={startResizeRight}
+              onTouchStart={handleTouchRight}
+              onDoubleClick={() => {
+                setRightWidth(360)
+                try { localStorage.setItem('aether.right_width', '360') } catch {}
+              }}
+              title="Drag to resize Maven panel (Double-click to reset)"
+            />
             <header><strong>Maven</strong><button className="ghost tiny" onClick={toggleMaven} aria-label="Hide Maven">×</button></header>
             <MavenLifecycle key={workspace.root} onOpenPom={openFile} tree={webDirHandle || virtualFiles ? null : tree} project={workspace.name} onReload={reloadMavenTree} options={mavenOptions} setOptions={setMavenOptions} onRun={(pom, goal) => {
               setTerminalOpen(false)
+              setVcsOpen(false)
               setMavenOpen(true)
+              setMavenMode('build')
               setLaunchRequest({ pom, goal })
             }} />
           </aside>
@@ -4167,21 +4981,81 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         launch={runLaunch}
         debugSourceLine={debugLocation ? tabs.find((tab) => tab.path === debugLocation.path)?.content.split('\n')[debugLocation.line - 1] : ''}
         onDebugLocation={setDebugLocation}
-        onStartApplication={() => { setTerminalOpen(false); setMavenOpen(true) }}
+        onStartApplication={() => { setTerminalOpen(false); setVcsOpen(false); setMavenOpen(true) }}
         launchRequest={launchRequest}
         onLaunchHandled={setLaunchRequest}
         options={mavenOptions}
         setOptions={setMavenOptions}
-        terminal={terminalOpen}
+        terminal={false}
         onToggleTerminal={toggleTerminal}
         visible={mavenOpen && mode !== 'chat'}
+        mode={mavenMode}
+        onSessionChange={setMavenMode}
+        onRunningChange={setAppRunning}
+        onRegisterStop={(stopFn) => { stopAppRef.current = stopFn }}
         onHide={() => setMavenOpen(false)}
+        isResizing={isResizing === 'bottom'}
+        onResizeStart={startResizeBottom}
+        onTouchResizeStart={handleTouchBottom}
+        onResizeReset={() => {
+          setBottomHeight(240)
+          try { localStorage.setItem('aether.bottom_height', '240') } catch {}
+        }}
+      />
+
+      <TerminalPanel
+        key={`term:${workspace.root || ''}`}
+        workspace={!webDirHandle && !virtualFiles ? workspace.root : null}
+        visible={terminalOpen && mode !== 'chat'}
+        onHide={() => setTerminalOpen(false)}
+        isResizing={isResizing === 'bottom'}
+        onResizeStart={startResizeBottom}
+        onTouchResizeStart={handleTouchBottom}
+        onResizeReset={() => {
+          setBottomHeight(240)
+          try { localStorage.setItem('aether.bottom_height', '240') } catch {}
+        }}
+      />
+
+      <VcsLogPanel
+        key={`vcs:${workspace.root || ''}`}
+        workspace={!webDirHandle && !virtualFiles ? workspace.root : null}
+        vcsState={vcsState}
+        visible={vcsOpen && mode !== 'chat'}
+        onHide={() => setVcsOpen(false)}
+        onRefreshStatus={refreshVcsStatus}
+        onOpenFile={openFile}
+        onOpenCommit={() => { setLeftOpen(true); setCommitSideOpen(true) }}
+        isResizing={isResizing === 'bottom'}
+        onResizeStart={startResizeBottom}
+        onTouchResizeStart={handleTouchBottom}
+        onResizeReset={() => {
+          setBottomHeight(240)
+          try { localStorage.setItem('aether.bottom_height', '240') } catch {}
+        }}
       />
 
       <footer className="workbench-status">
-        <span>{workspace.name || 'No project'}</span>
-        {current && <span title={current.path}>{current.path}</span>}
-        {current && <span className="workbench-encoding">UTF-8</span>}
+        <span className="status-crumb">
+          <span className="status-project-badge">□</span>
+          <span>{workspace.name || 'No project'}</span>
+          {current && (
+            <>
+              <span className="status-sep">›</span>
+              <span className={`project-tree-icon ${fileIconName(current.path.split('/').pop())}`}>
+                <TreeIcon name={fileIconName(current.path.split('/').pop())} />
+              </span>
+              <span title={current.path}>{current.path}</span>
+            </>
+          )}
+        </span>
+        {current && (
+          <span className="workbench-encoding">
+            <span>{current.content?.includes('\r\n') ? 'CRLF' : 'LF'}</span>
+            <span>UTF-8</span>
+            <span>{current.path.endsWith('.java') ? '4 spaces' : '2 spaces'}</span>
+          </span>
+        )}
       </footer>
 
       {/* Mobile Bottom Navigation Dock */}
@@ -4366,7 +5240,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           onClose={() => setSearchEverywhere(false)}
           actions={[
             { name: 'Open Project', run: openFolderPicker },
-            { name: 'Maven Build Console', run: () => setMavenOpen(true) },
+            { name: 'Maven Build Console', run: () => { setTerminalOpen(false); setVcsOpen(false); setMavenOpen(true); setMavenMode('build') } },
             { name: 'Run Application', run: showRun },
             { name: 'Browse Server Workspace', run: openFolderPicker },
             { name: 'New Markdown', run: () => createNewFile() },
