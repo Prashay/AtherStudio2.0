@@ -3,6 +3,7 @@ const { mountTerminal } = require('./terminal')
 const { mountMaven } = require('./maven')
 const { mountJavaValidation } = require('./javaValidation')
 const { mountJavaFormat } = require('./javaFormat')
+const { mountNewProject } = require('./newProject')
 const express = require('express')
 const cors = require('cors')
 const fs = require('fs')
@@ -652,6 +653,7 @@ mountJavaValidation(app, { root })
 mountJavaFormat(app)
 mountVcs(app, { root })
 mountTerminal(app, { root })
+mountNewProject(app, { assertBrowsable })
 
 const distCandidates = [
   path.join(__dirname, '..', 'frontend', 'dist'),

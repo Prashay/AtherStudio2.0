@@ -5,6 +5,7 @@ import VcsLogPanel, { VcsCommitPanel, VcsBranchWidget } from './VcsPanel.jsx'
 import TerminalPanel from './TerminalPanel.jsx'
 import SearchEverywhere from './SearchEverywhere.jsx'
 import CodeEditor from './CodeEditor.jsx'
+import NewProjectDialog from './NewProjectDialog.jsx'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { QRCodeSVG, downloadQRCodePNG } from './qrcode.jsx'
@@ -696,6 +697,7 @@ export default function App() {
   const filesInputRef = useRef(null)
   const [importNotice, setImportNotice] = useState('')
   const [folderOpen, setFolderOpen] = useState(false)
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [browse, setBrowse] = useState(null)
   const [browseErr, setBrowseErr] = useState('')
   const [folderPath, setFolderPath] = useState('')
@@ -1880,6 +1882,18 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     void loadBrowse(root)
   }
 
+  const openNewProject = () => {
+    if (webPulse) return
+    setMenuOpen(false)
+    setActiveMenu(null)
+    setNewProjectOpen(true)
+  }
+
+  const handleProjectCreated = async (projectPath) => {
+    setNewProjectOpen(false)
+    await selectFolder(projectPath)
+  }
+
   const selectFolder = async (requested = folderPath) => {
     if (webPulse) return openLocalFolder()
     const path = requested.trim()
@@ -2463,7 +2477,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     }
   }
   const newItems = (directory, fromFileMenu = false) => [
-    ...(fromFileMenu ? [['Project from Existing Sources…', openFolderPicker]] : []),
+    ...(fromFileMenu ? [['Project…', webPulse ? null : openNewProject], ['Project from Existing Sources…', openFolderPicker]] : []),
     ['File…', canCreateInProject ? () => createProjectItem('File', directory) : null],
     ['Directory…', canCreateInProject ? () => createProjectItem('Directory', directory) : null],
     ['Java Class…', canCreateInProject ? () => createProjectItem('Java Class', directory, '.java', (name, folder) => {
@@ -2492,6 +2506,8 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         }
       } else if (action === 'new-directory') {
         if (canCreateInProject) createProjectItem('Directory', '')
+      } else if (action === 'new-project') {
+        openNewProject()
       } else if (action === 'open-folder') {
         openFolderPicker()
       } else if (action === 'save') {
@@ -2920,6 +2936,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
 
   const menus = {
     File: [
+      ['New Project…', webPulse ? null : openNewProject],
       ['New File…', canCreateInProject ? () => createProjectItem('File', '') : () => createNewFile()],
       ['New Java Class…', canCreateInProject ? () => createProjectItem('Java Class', '', '.java', (name) => `public class ${name.slice(0, -5)} {\n}\n`) : null],
       ['New Directory…', canCreateInProject ? () => createProjectItem('Directory', '') : null],
@@ -3139,6 +3156,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         <details className="toolbar-popover project-switcher">
           <summary title={workspace.root || 'Switch project'}><span>{workspace.name || 'Open Project'}</span><span className="project-switcher-chevron" aria-hidden="true" /></summary>
           <div>
+            {!webPulse && <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; openNewProject() }}>New Project…</button>}
             <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; openFolderPicker() }}>Open Project…</button>
             {webPulse && <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; importFiles(folderInputRef) }}>Import Folder…</button>}
             {!webPulse && recentProjects.length > 0 && <strong>Recent Projects</strong>}
@@ -3669,6 +3687,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 <div className="no-project-box">
                   <p>No project folder opened.<br/>Open your local project to work on it.</p>
                   <button className="primary" onClick={openFolderPicker}>Open Project</button>
+                  {!webPulse && <button className="ghost" onClick={openNewProject}>New Project…</button>}
                 </div>
               ) : (
                 <div className="empty"><p>Loading tree</p></div>
@@ -5247,6 +5266,11 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             { name: 'Settings', run: () => setSettingsOpen(true) }
           ]}
         />
+      )}
+
+      {newProjectOpen && createPortal(
+        <NewProjectDialog onClose={() => setNewProjectOpen(false)} onCreated={handleProjectCreated} />,
+        document.body
       )}
 
       {folderOpen && (

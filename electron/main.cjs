@@ -415,6 +415,11 @@ function setupApplicationMenu() {
       label: 'File',
       submenu: [
         {
+          label: 'New Project…',
+          click: () => mainWindow?.webContents.send('menu-action', 'new-project')
+        },
+        { type: 'separator' },
+        {
           label: 'New File…',
           accelerator: 'CmdOrCtrl+N',
           click: () => mainWindow?.webContents.send('menu-action', 'new-file')

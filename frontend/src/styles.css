@@ -9950,3 +9950,24 @@ body.resizing-row * {
   cursor: default;
 }
 
+
+/* New Project dialog */
+.new-project-dialog { width: min(720px, calc(100vw - 24px)); }
+.new-project-dialog .java-config-fields { align-content: start; }
+.new-project-location { display: flex; gap: 6px; }
+.new-project-location input { flex: 1; }
+.new-project-path { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.new-project-check { font-size: 13px; gap: 8px; }
+.new-project-row { display: grid; gap: 5px; }
+.new-project-segment { display: inline-flex; flex-wrap: wrap; gap: 0; }
+.new-project-segment button { border-radius: 0; margin-left: -1px; }
+.new-project-segment button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+.new-project-segment button:last-child { border-radius: 0 6px 6px 0; }
+.new-project-segment button[aria-checked="true"] { background: #674638; border-color: #aa745b; position: relative; }
+.java-config-dialog .new-project-advanced { justify-self: start; background: none; border: 0; padding: 2px 0; color: var(--muted); }
+.new-project-error { color: #f0a0a0; font-size: 13px; }
+@media (max-width: 560px) {
+  .new-project-dialog .java-config-body { grid-template-columns: 1fr; }
+  .new-project-dialog .java-config-body aside { display: flex; gap: 6px; border-right: 0; border-bottom: 1px solid #ffffff20; overflow-x: auto; }
+  .new-project-dialog .java-config-body aside button { width: auto; margin-top: 0; white-space: nowrap; }
+}
