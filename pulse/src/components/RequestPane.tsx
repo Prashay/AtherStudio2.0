@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import PopIcon from "./PopIcon";
 import { foldedRanges, unfoldEffect } from "@codemirror/language";
 import { EditorView } from "@codemirror/view";
 import type { AuthConfig, BodyMode, Collection, Environment, HttpMethod, RequestSnapshot } from "../types";
@@ -411,9 +412,9 @@ export function RequestPane(props: Props) {
                 onClick={() => !isDynamic && handleOpenVarEditor(v)}
               >
                 <span className="chip-key">{`{{${v}}}`}</span>
-                <span className="chip-arrow">→</span>
+                <span className="chip-arrow"><PopIcon name="arrow" size={14} /></span>
                 <span className="chip-val">{isDynamic ? `🎲 ${hit.value}` : (hit.value || '""')}</span>
-                {!isDynamic && <span className="chip-edit-icon" title="Edit variable">✏️</span>}
+                {!isDynamic && <span className="chip-edit-icon" title="Edit variable"><PopIcon name="pencil" size={14} /></span>}
               </span>
             );
           })}
@@ -494,10 +495,10 @@ export function RequestPane(props: Props) {
               }}
               title={`baseUrl is provided by ${baseUrlHit?.sourceName || env?.name || "environment"}. Click to edit.`}
             >
-              <span className="base-tag-icon">🌐</span>
+              <span className="base-tag-icon"><PopIcon name="globe" size={14} /></span>
               <span className="base-tag-label">baseUrl:</span>
               <span className="base-tag-val">{baseUrlHit?.value || "unresolved"}</span>
-              <span className="base-tag-pencil">✏️</span>
+              <span className="base-tag-pencil"><PopIcon name="pencil" size={14} /></span>
             </button>
           )}
         </div>
@@ -557,7 +558,7 @@ export function RequestPane(props: Props) {
                   : `baseUrl is not set in active env (${env?.name || "No Environment"}). Click to define it.`
               }
             >
-              <span className="res-edit-pencil">✏️</span>
+              <span className="res-edit-pencil"><PopIcon name="pencil" size={14} /></span>
               <span className="res-edit-title">Edit baseUrl</span>
               {baseUrlHit ? (
                 <span className="res-edit-current-val">{baseUrlHit.value}</span>
@@ -579,9 +580,9 @@ export function RequestPane(props: Props) {
                   onClick={() => handleOpenVarEditor(v)}
                 >
                   <span className="chip-key">{`{{${v}}}`}</span>
-                  <span className="chip-arrow">→</span>
+                  <span className="chip-arrow"><PopIcon name="arrow" size={14} /></span>
                   <span className="chip-val">{hit.value || '""'}</span>
-                  <span className="chip-edit-icon" title="Edit variable">✏️</span>
+                  <span className="chip-edit-icon" title="Edit variable"><PopIcon name="pencil" size={14} /></span>
                 </span>
               ) : (
                 <span
@@ -603,7 +604,7 @@ export function RequestPane(props: Props) {
         <div className="var-quick-editor-box">
           <div className="var-quick-editor-header">
             <div className="var-header-left">
-              <span className="var-icon">🌐</span>
+              <span className="var-icon"><PopIcon name="globe" size={14} /></span>
               <span className="var-title">
                 Edit Variable: <code>{`{{${editingVar}}}`}</code>
               </span>
@@ -612,7 +613,7 @@ export function RequestPane(props: Props) {
                   Env: <strong>{env.name}</strong>
                 </span>
               ) : (
-                <span className="var-env-badge warn">⚠️ No Environment Active</span>
+                <span className="var-env-badge warn"><PopIcon name="alert" size={14} /> No Environment Active</span>
               )}
             </div>
             <div className="var-header-right">
@@ -649,7 +650,7 @@ export function RequestPane(props: Props) {
                 aria-label="Close editor"
                 title="Close (Esc)"
               >
-                ✕
+                <PopIcon name="close" size={14} />
               </button>
             </div>
           </div>
@@ -681,7 +682,7 @@ export function RequestPane(props: Props) {
                     onClick={() => setEditVarValue("")}
                     title="Clear"
                   >
-                    ✕
+                    <PopIcon name="close" size={14} />
                   </button>
                 )}
               </div>
@@ -696,7 +697,7 @@ export function RequestPane(props: Props) {
 
             {editingVar === "baseUrl" && (
               <div className="var-presets-row">
-                <span className="presets-label">⚡ 1-Click Base URL Presets:</span>
+                <span className="presets-label"><PopIcon name="zap" size={14} /> 1-Click Base URL Presets:</span>
                 <div className="presets-list">
                   <button
                     type="button"
@@ -707,7 +708,7 @@ export function RequestPane(props: Props) {
                     }}
                     title="Pulse Built-in Proxy & Mock Server on port 3001"
                   >
-                    ⚡ Pulse Local Mock (3001)
+                    <PopIcon name="zap" size={14} /> Pulse Local Mock (3001)
                   </button>
                   <button
                     type="button"
@@ -718,7 +719,7 @@ export function RequestPane(props: Props) {
                     }}
                     title="Common Local Backend on port 8080"
                   >
-                    💻 localhost:8080
+                    <PopIcon name="monitor" size={14} /> localhost:8080
                   </button>
                   <button
                     type="button"
@@ -729,7 +730,7 @@ export function RequestPane(props: Props) {
                     }}
                     title="Node.js / React / Next.js on port 3000"
                   >
-                    🚀 localhost:3000
+                    <PopIcon name="rocket" size={14} /> localhost:3000
                   </button>
                   <button
                     type="button"
@@ -751,7 +752,7 @@ export function RequestPane(props: Props) {
                     }}
                     title="Public HTTPBin Echo Service"
                   >
-                    🌐 httpbin.org
+                    <PopIcon name="globe" size={14} /> httpbin.org
                   </button>
                   <button
                     type="button"
@@ -782,7 +783,7 @@ export function RequestPane(props: Props) {
                   }}
                   title="Open full environment manager to view all variables, duplicate, or export"
                 >
-                  ⚙️ Open Full Environment Settings
+                  <PopIcon name="settings" size={14} /> Open Full Environment Settings
                 </button>
               )}
             </div>
@@ -940,7 +941,7 @@ export function RequestPane(props: Props) {
                 )}
               </button>
             ))}
-            {props.envName && <span className="env-chip">🌐 {props.envName}</span>}
+            {props.envName && <span className="env-chip"><PopIcon name="globe" size={14} /> {props.envName}</span>}
           </div>
 
           <div className={`pane-body ${props.reqTab === "body" ? "is-body-tab" : props.reqTab === "scripts" ? "is-scripts-tab" : ""}`}>
@@ -1039,7 +1040,7 @@ export function RequestPane(props: Props) {
                             onClick={() => setAuth({ bearerToken: "" })}
                             title="Clear token"
                           >
-                            ✕
+                            <PopIcon name="close" size={14} />
                           </button>
                         )}
                       </div>
@@ -1075,7 +1076,7 @@ export function RequestPane(props: Props) {
                             onClick={() => setBasicPassModalOpen(true)}
                             title="Open Password editor & variable inspector modal"
                           >
-                            ✏️ Edit
+                            <PopIcon name="pencil" size={14} /> Edit
                           </button>
                           {draft.auth.basicPass && (
                             <button
@@ -1139,7 +1140,7 @@ export function RequestPane(props: Props) {
                               onClick={() => setAuth({ basicPass: "" })}
                               title="Clear password"
                             >
-                              ✕
+                              <PopIcon name="close" size={14} />
                             </button>
                           )}
                         </div>
@@ -1221,7 +1222,7 @@ export function RequestPane(props: Props) {
                               onClick={() => setAuth({ apiKeyValue: "" })}
                               title="Clear key value"
                             >
-                              ✕
+                              <PopIcon name="close" size={14} />
                             </button>
                           )}
                         </div>
@@ -1284,7 +1285,7 @@ export function RequestPane(props: Props) {
                       onClick={() => setBodySearchOpen((prev) => !prev)}
                       title="Find & Replace in request body (Ctrl+F)"
                     >
-                      <span>🔍</span>
+                      <span><PopIcon name="search" size={14} /></span>
                       <span>Find</span>
                     </button>
                   )}
@@ -1295,7 +1296,7 @@ export function RequestPane(props: Props) {
                       onClick={handleBeautifyJson}
                       title="Beautify / Format JSON payload"
                     >
-                      <span>✨</span>
+                      <span><PopIcon name="sparkle" size={14} /></span>
                       <span>
                         {beautifyStatus === "success"
                           ? "Beautified!"
@@ -1310,7 +1311,7 @@ export function RequestPane(props: Props) {
                 {bodySearchOpen && draft.bodyMode !== "none" && (
                   <div className="req-body-search-bar">
                     <div className="req-body-search-input-wrap">
-                      <span style={{ fontSize: 11, opacity: 0.65 }}>🔍</span>
+                      <span style={{ fontSize: 11, opacity: 0.65 }}><PopIcon name="search" size={14} /></span>
                       <input
                         ref={bodySearchInputRef}
                         type="text"
@@ -1348,7 +1349,7 @@ export function RequestPane(props: Props) {
                             setBodyMatchIndex(0);
                           }}
                         >
-                          ✕
+                          <PopIcon name="close" size={14} />
                         </button>
                       )}
                     </div>
@@ -1376,7 +1377,7 @@ export function RequestPane(props: Props) {
                         title="Previous match (Shift+Enter or ↑)"
                         style={{ padding: "2px 5px", height: 24, fontSize: 10 }}
                       >
-                        ▲
+                        <PopIcon name="chevronUp" size={14} />
                       </button>
                       <button
                         type="button"
@@ -1386,7 +1387,7 @@ export function RequestPane(props: Props) {
                         title="Next match (Enter or ↓)"
                         style={{ padding: "2px 5px", height: 24, fontSize: 10 }}
                       >
-                        ▼
+                        <PopIcon name="chevronDown" size={14} />
                       </button>
                     </div>
 
@@ -1407,7 +1408,7 @@ export function RequestPane(props: Props) {
                       title="Close search (Esc)"
                       style={{ marginLeft: "auto", padding: "2px 6px", height: 24, fontSize: 11 }}
                     >
-                      ✕
+                      <PopIcon name="close" size={14} />
                     </button>
 
                     {showReplace && (
@@ -1454,7 +1455,7 @@ export function RequestPane(props: Props) {
                         onClick={handleBeautifyJson}
                         title="Beautify / Format JSON (Indents & validates JSON payload)"
                       >
-                        <span>✨</span>
+                        <span><PopIcon name="sparkle" size={14} /></span>
                         <span>
                           {beautifyStatus === "success"
                             ? "Beautified!"
@@ -1632,7 +1633,7 @@ export function RequestPane(props: Props) {
                 <div className="scripts-editor-area">
                   {props.collection && (
                     <div className="collection-script-banner">
-                      <div className="collection-script-icon">📁</div>
+                      <div className="collection-script-icon"><PopIcon name="folder" size={14} /></div>
                       <div className="collection-script-info" style={{ flex: 1 }}>
                         <span className="collection-script-title">
                           {props.collection.preScript || props.collection.postScript
@@ -1754,7 +1755,7 @@ export function RequestPane(props: Props) {
           >
             <div className="modal-header">
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 16 }}>🔒</span>
+                <span style={{ fontSize: 16 }}><PopIcon name="lock" size={14} /></span>
                 <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Edit Basic Auth Password</h2>
               </div>
               <button
@@ -1762,7 +1763,7 @@ export function RequestPane(props: Props) {
                 onClick={() => setBasicPassModalOpen(false)}
                 title="Close"
               >
-                ✕
+                <PopIcon name="close" size={14} />
               </button>
             </div>
 

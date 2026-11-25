@@ -3,6 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
 const { randomUUID } = require('node:crypto')
+const { StringDecoder } = require('node:string_decoder')
 
 const sessions = new Map()
 
@@ -15,27 +16,51 @@ function getShell() {
   return process.env.SHELL || '/bin/bash'
 }
 
-function createSession(workingDirectory) {
+const PTY_HELPER = path.join(__dirname, 'pty_helper.py')
+let pythonCmd
+
+function findPython() {
+  if (pythonCmd !== undefined) return pythonCmd
+  pythonCmd = null
+  if (process.platform === 'win32' || !fs.existsSync(PTY_HELPER)) return pythonCmd
+  for (const dir of (process.env.PATH || '/usr/bin:/bin:/usr/local/bin').split(path.delimiter).concat(['/usr/bin', '/usr/local/bin', '/opt/homebrew/bin'])) {
+    const candidate = path.join(dir, 'python3')
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK)
+      pythonCmd = candidate
+      break
+    } catch {}
+  }
+  return pythonCmd
+}
+
+function createSession(workingDirectory, { cols = 120, rows = 30 } = {}) {
   const id = randomUUID()
   const shell = getShell()
   const isPwsh = /powershell/i.test(shell)
   const isCmd = /cmd\.exe/i.test(shell)
-
-  const args = isPwsh ? ['-NoExit'] : isCmd ? ['/K'] : ['-i']
   const cwd = workingDirectory && fs.existsSync(workingDirectory) ? path.resolve(workingDirectory) : process.cwd()
+  const env = {
+    ...process.env,
+    TERM: 'xterm-256color',
+    COLORTERM: 'truecolor',
+    TERM_PROGRAM: 'AetherStudio',
+    COLUMNS: String(cols),
+    LINES: String(rows)
+  }
 
+  // Prefer a real PTY (Linux/macOS) so prompts, colours, Tab completion and full-screen tools work.
+  const python = findPython()
   let proc
+  let pty = false
   try {
-    proc = spawn(shell, args, {
-      cwd,
-      env: {
-        ...process.env,
-        TERM: 'xterm-256color',
-        COLUMNS: '120',
-        LINES: '30'
-      },
-      windowsHide: true
-    })
+    if (python) {
+      proc = spawn(python, [PTY_HELPER, shell, '-l'], { cwd, env, stdio: ['pipe', 'pipe', 'pipe', 'pipe'] })
+      pty = true
+    } else {
+      const args = isPwsh ? ['-NoLogo', '-NoExit'] : isCmd ? ['/K'] : ['-i']
+      proc = spawn(shell, args, { cwd, env, windowsHide: true })
+    }
   } catch (err) {
     throw new Error(`Failed to spawn terminal shell (${shell}): ${err.message}`)
   }
@@ -43,6 +68,7 @@ function createSession(workingDirectory) {
   const session = {
     id,
     cwd,
+    pty,
     shell: path.basename(shell),
     proc,
     buffer: '',
@@ -62,8 +88,12 @@ function createSession(workingDirectory) {
     }
   }
 
-  proc.stdout?.on('data', (d) => broadcast(d.toString()))
-  proc.stderr?.on('data', (d) => broadcast(d.toString()))
+  const outDecoder = new StringDecoder('utf8')
+  const errDecoder = new StringDecoder('utf8')
+  proc.stdout?.on('data', (d) => broadcast(outDecoder.write(d)))
+  proc.stderr?.on('data', (d) => broadcast(errDecoder.write(d)))
+  proc.stdio[3]?.on?.('error', () => {})
+  proc.stdin?.on('error', () => {})
 
   proc.on('close', (code) => {
     broadcast(`\r\n[Process completed with exit code ${code}]\r\n`)
@@ -90,12 +120,15 @@ function mountTerminal(app, { root }) {
       }
       if (!targetDir) targetDir = process.cwd()
 
-      const session = createSession(targetDir)
+      const cols = Math.max(20, Math.min(500, parseInt(req.body?.cols, 10) || 120))
+      const rows = Math.max(5, Math.min(200, parseInt(req.body?.rows, 10) || 30))
+      const session = createSession(targetDir, { cols, rows })
       res.json({
         ok: true,
         id: session.id,
         shell: session.shell,
-        cwd: session.cwd
+        cwd: session.cwd,
+        pty: session.pty
       })
     } catch (err) {
       res.status(500).json({ error: err.message })
@@ -118,6 +151,19 @@ function mountTerminal(app, { root }) {
     } catch (err) {
       res.status(500).json({ error: err.message })
     }
+  })
+
+  // Resize the PTY (no-op for pipe sessions)
+  app.post('/api/terminal/resize', (req, res) => {
+    const { id } = req.body || {}
+    const session = sessions.get(id)
+    if (!session) return res.status(404).json({ error: 'Terminal session not found' })
+    const cols = Math.max(20, Math.min(500, parseInt(req.body.cols, 10) || 0))
+    const rows = Math.max(5, Math.min(200, parseInt(req.body.rows, 10) || 0))
+    if (session.pty && session.proc.stdio[3] && cols && rows) {
+      try { session.proc.stdio[3].write(JSON.stringify({ cols, rows }) + '\n') } catch {}
+    }
+    res.json({ ok: true })
   })
 
   // Poll terminal buffer

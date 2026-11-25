@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react'
+import PopIcon from './PopupIcons.jsx'
 
 export const TASK_HISTORY_KEY = 'aether.task_history.v1'
 
@@ -74,7 +75,7 @@ export function TaskHistoryModal({
         {/* Modal Header */}
         <div className="history-modal-header">
           <div className="history-header-title">
-            <span className="history-header-icon">📜</span>
+            <span className="history-header-icon"><PopIcon name="history" size={14} /></span>
             <div>
               <h3>Task &amp; Chat History</h3>
               <p>Revisit past tasks, resume conversations, or export transcripts</p>
@@ -86,14 +87,14 @@ export function TaskHistoryModal({
             onClick={onClose}
             title="Close History (Esc)"
           >
-            ✕
+            <PopIcon name="close" size={14} />
           </button>
         </div>
 
         {/* Filter & Search Bar */}
         <div className="history-controls-row">
           <div className="history-search-wrap">
-            <span className="history-search-icon">🔍</span>
+            <span className="history-search-icon"><PopIcon name="search" size={14} /></span>
             <input
               type="text"
               className="history-search-input"
@@ -108,7 +109,7 @@ export function TaskHistoryModal({
                 className="history-search-clear"
                 onClick={() => setSearch('')}
               >
-                ✕
+                <PopIcon name="close" size={14} />
               </button>
             )}
           </div>
@@ -126,21 +127,21 @@ export function TaskHistoryModal({
               className={`history-pill ${filterMode === 'chat' ? 'active' : ''}`}
               onClick={() => setFilterMode('chat')}
             >
-              💬 Chat
+              <PopIcon name="chat" size={14} /> Chat
             </button>
             <button
               type="button"
               className={`history-pill ${filterMode === 'agent' ? 'active' : ''}`}
               onClick={() => setFilterMode('agent')}
             >
-              🤖 Agent
+              <PopIcon name="bot" size={14} /> Agent
             </button>
             <button
               type="button"
               className={`history-pill ${filterMode === 'editor' ? 'active' : ''}`}
               onClick={() => setFilterMode('editor')}
             >
-              📝 Editor
+              <PopIcon name="pencil" size={14} /> Editor
             </button>
           </div>
         </div>
@@ -149,7 +150,7 @@ export function TaskHistoryModal({
         <div className="history-list-wrap">
           {!filteredHistory.length ? (
             <div className="history-empty-state">
-              <span className="empty-ico">📭</span>
+              <span className="empty-ico"><PopIcon name="inbox" size={14} /></span>
               <h4>{search ? 'No matching tasks found' : 'No task history yet'}</h4>
               <p>
                 {search
@@ -173,7 +174,7 @@ export function TaskHistoryModal({
                     <div className="history-card-top">
                       <div className="history-card-badges">
                         <span className={`history-mode-tag mode-${item.mode || 'chat'}`}>
-                          {item.mode === 'agent' ? '🤖 Agent' : item.mode === 'editor' ? '📝 Editor' : '💬 Chat'}
+                          {item.mode === 'agent' ? <><PopIcon name="bot" size={14} /> Agent</> : item.mode === 'editor' ? <><PopIcon name="pencil" size={14} /> Editor</> : <><PopIcon name="chat" size={14} /> Chat</>}
                         </span>
                         {item.modelLabel && (
                           <span className="history-model-tag">{item.modelLabel}</span>
@@ -198,7 +199,7 @@ export function TaskHistoryModal({
 
                     <div className="history-card-footer">
                       <span className="history-msg-count">
-                        💬 {msgCount} {msgCount === 1 ? 'message' : 'messages'}
+                        <PopIcon name="chat" size={14} /> {msgCount} {msgCount === 1 ? 'message' : 'messages'}
                       </span>
 
                       <div className="history-card-actions">
@@ -211,7 +212,7 @@ export function TaskHistoryModal({
                           }}
                           title="Open and resume this session"
                         >
-                          ▶ Resume
+                          <PopIcon name="play" size={14} /> Resume
                         </button>
                         <button
                           type="button"
@@ -219,7 +220,7 @@ export function TaskHistoryModal({
                           onClick={() => onExportSession(item, 'markdown')}
                           title="Export conversation as Markdown"
                         >
-                          📥 .md
+                          <PopIcon name="download" size={14} /> .md
                         </button>
                         <button
                           type="button"
@@ -227,7 +228,7 @@ export function TaskHistoryModal({
                           onClick={() => onExportSession(item, 'json')}
                           title="Export session data as JSON"
                         >
-                          📄 .json
+                          <PopIcon name="file" size={14} /> .json
                         </button>
                         <button
                           type="button"
@@ -238,7 +239,7 @@ export function TaskHistoryModal({
                           }}
                           title="Delete session from history"
                         >
-                          🗑️
+                          <PopIcon name="trash" size={14} />
                         </button>
                       </div>
                     </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FC } from "react";
+import PopIcon from "./PopIcon";
 
 interface DownloadModalProps {
   isOpen: boolean;
@@ -273,7 +274,7 @@ export const DownloadModal: FC<DownloadModalProps> = ({ isOpen, onClose, onDownl
                 rel="noopener noreferrer"
                 className="pending-action-btn"
               >
-                <span>⚡ Run "Build Desktop Apps" on GitHub Actions</span>
+                <span><PopIcon name="zap" size={14} /> Run "Build Desktop Apps" on GitHub Actions</span>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                   <polyline points="15 3 21 3 21 9" />
@@ -447,7 +448,7 @@ export const DownloadModal: FC<DownloadModalProps> = ({ isOpen, onClose, onDownl
         {showPendingHelp && (
           <div className="pending-help-backdrop" onClick={() => setShowPendingHelp(null)}>
             <div className="pending-help-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="pending-help-icon">⚡</div>
+              <div className="pending-help-icon"><PopIcon name="zap" size={14} /></div>
               <h3 className="pending-help-title">macOS Release Not Yet Published</h3>
               <p className="pending-help-desc">
                 The download link points to <strong>GitHub Releases</strong>, which has not been published yet on this repository.

@@ -1,6 +1,7 @@
 import { debuggerValues } from './debuggerValues.js'
 import TreeIcon from './TreeIcon.jsx'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import PopIcon from './PopupIcons.jsx'
 import { createPortal } from 'react-dom'
 
 const goals = ['clean', 'validate', 'compile', 'test', 'package', 'verify', 'install', 'site', 'clean install', 'compiler:compile', 'jar:jar', '--version']
@@ -563,7 +564,7 @@ export default function MavenPanel({
     <header className="java-debug-header">
       <strong>Debug</strong>
       <span className="java-debug-target" title={debugTarget.name}>{debugTarget.name.split('.').at(-1)}</span>
-      <button type="button" className="ghost tiny" onClick={onHide} aria-label="Hide Debug panel">−</button>
+      <button type="button" className="ghost tiny" onClick={onHide} aria-label="Hide Debug panel"><PopIcon name="minus" size={14} /></button>
     </header>
     <div className="java-debug-toolbar">
       {[
@@ -704,7 +705,7 @@ export default function MavenPanel({
     <header><strong id="java-config-title">Run/Debug Configurations</strong><button type="button" onClick={closeConfiguration} aria-label="Close configuration">×</button></header>
     <div className="java-config-body">
       <aside aria-label="Applications" className="java-config-tree">
-        <strong>⌄ Application</strong>
+        <strong><PopIcon name="chevronDown" size={14} /> Application</strong>
         {applications.map((item) => <button key={item.path} type="button" title={item.className} aria-pressed={target?.path === item.path}
           onClick={() => onSelectApplication(item.path)}>{configs[item.path]?.name || item.className.split('.').at(-1)}</button>)}
       </aside>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import PopIcon from "./PopIcon";
 import { parseCurl } from "../curl";
 import { collectFolders } from "../tree";
 import type { Collection, RequestSnapshot } from "../types";
@@ -140,7 +141,7 @@ export function CurlModal({ collections, onImport, onClose }: Props) {
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 18 }}>📋</span>
+              <span style={{ fontSize: 18 }}><PopIcon name="copy" size={14} /></span>
               <h2 style={{ margin: 0, fontSize: 17 }}>Import cURL Command</h2>
             </div>
             <p className="muted" style={{ margin: "4px 0 0" }}>
@@ -148,7 +149,7 @@ export function CurlModal({ collections, onImport, onClose }: Props) {
             </p>
           </div>
           <button className="modal-close-btn" onClick={onClose} aria-label="Close">
-            ✕
+            <PopIcon name="close" size={14} />
           </button>
         </div>
 
@@ -163,7 +164,7 @@ export function CurlModal({ collections, onImport, onClose }: Props) {
               title="Paste cURL from clipboard"
               style={{ fontSize: 11, padding: "2px 8px" }}
             >
-              📋 Paste
+              <PopIcon name="copy" size={14} /> Paste
             </button>
             <button
               type="button"
@@ -209,7 +210,7 @@ export function CurlModal({ collections, onImport, onClose }: Props) {
               fontSize: 12,
             }}
           >
-            ⚠️ {error}
+            <PopIcon name="alert" size={14} /> {error}
           </div>
         )}
 
@@ -374,7 +375,7 @@ export function CurlModal({ collections, onImport, onClose }: Props) {
                   >
                     {collections.map((col) => (
                       <option key={col.id} value={col.id}>
-                        📁 {col.name} ({col.children.length} items)
+                        <PopIcon name="folder" size={14} /> {col.name} ({col.children.length} items)
                       </option>
                     ))}
                   </select>
@@ -387,10 +388,10 @@ export function CurlModal({ collections, onImport, onClose }: Props) {
                       value={selectedFolderId}
                       onChange={(e) => setSelectedFolderId(e.target.value)}
                     >
-                      <option value="">📁 Root (Main collection)</option>
+                      <option value=""><PopIcon name="folder" size={14} /> Root (Main collection)</option>
                       {availableFolders.map((fld) => (
                         <option key={fld.id} value={fld.id}>
-                          📂 {fld.name}
+                          <PopIcon name="folderOpen" size={14} /> {fld.name}
                         </option>
                       ))}
                     </select>
@@ -415,7 +416,7 @@ export function CurlModal({ collections, onImport, onClose }: Props) {
           {targetMode === "scratch" && (
             <div className="curl-dest-config">
               <div className="curl-dest-scratch-note">
-                <span>💡</span>
+                <span><PopIcon name="bulb" size={14} /></span>
                 <span>Opens as a draft tab. You can inspect, modify, run, and click <strong>Save</strong> anytime later.</span>
               </div>
             </div>

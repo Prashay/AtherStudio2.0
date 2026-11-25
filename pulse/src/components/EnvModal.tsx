@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import PopIcon from "./PopIcon";
 import type { Environment } from "../types";
 import { kv, uid } from "../id";
 import { downloadJson, exportPostmanEnvironment } from "../importExport";
@@ -201,7 +202,7 @@ export function EnvModal({
                   }}
                   title="Pulse Built-in Proxy & Mock Server"
                 >
-                  ⚡ Local Mock (3001)
+                  <PopIcon name="zap" size={14} /> Local Mock (3001)
                 </button>
                 <button
                   type="button"
@@ -215,7 +216,7 @@ export function EnvModal({
                   }}
                   title="Standard Local Backend Port 8080"
                 >
-                  💻 localhost:8080
+                  <PopIcon name="monitor" size={14} /> localhost:8080
                 </button>
                 <button
                   type="button"
@@ -229,7 +230,7 @@ export function EnvModal({
                   }}
                   title="Node / React / Next.js Port 3000"
                 >
-                  🚀 localhost:3000
+                  <PopIcon name="rocket" size={14} /> localhost:3000
                 </button>
                 <button
                   type="button"
@@ -243,7 +244,7 @@ export function EnvModal({
                   }}
                   title="Public HTTPBin Echo API"
                 >
-                  🌐 httpbin.org
+                  <PopIcon name="globe" size={14} /> httpbin.org
                 </button>
               </div>
             </div>
@@ -273,7 +274,7 @@ export function EnvModal({
               className="btn primary sm"
               onClick={addSampleEnv}
             >
-              🧪 Create Sample Environment
+              <PopIcon name="flask" size={14} /> Create Sample Environment
             </button>
           </div>
         )}
@@ -297,7 +298,7 @@ export function EnvModal({
             onClick={addSampleEnv}
             title="Add pre-configured sample environment with baseUrl, apiKey, and timeout"
           >
-            🧪 Add Sample Env
+            <PopIcon name="flask" size={14} /> Add Sample Env
           </button>
           <button className="btn" onClick={add}>
             New environment

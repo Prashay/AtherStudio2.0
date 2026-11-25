@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import PopIcon from "./PopIcon";
 import type { Collection, Environment } from "../types";
 import { parseImportFiles, parseImportJson, parseDocToCollection } from "../importExport";
 import { collectFolders } from "../tree";
@@ -194,11 +195,11 @@ export function ImportModal({ existingCollections = [], initialFiles, onImportSu
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 18 }}>📥</span>
+            <span style={{ fontSize: 18 }}><PopIcon name="download" size={14} /></span>
             <h2 style={{ margin: 0, fontSize: 17 }}>Import Collections & Environments</h2>
           </div>
           <button className="icon-btn" onClick={onClose} style={{ fontSize: 16 }}>
-            ✕
+            <PopIcon name="close" size={14} />
           </button>
         </div>
         <div className="muted" style={{ marginTop: 4, marginBottom: 14 }}>
@@ -214,7 +215,7 @@ export function ImportModal({ existingCollections = [], initialFiles, onImportSu
               setPreview(null);
             }}
           >
-            📄 Choose File(s)
+            <PopIcon name="file" size={14} /> Choose File(s)
           </button>
           <button
             className={`btn sm ${activeTab === "folder" ? "primary" : "ghost"}`}
@@ -223,7 +224,7 @@ export function ImportModal({ existingCollections = [], initialFiles, onImportSu
               setPreview(null);
             }}
           >
-            📁 Choose Folder
+            <PopIcon name="folder" size={14} /> Choose Folder
           </button>
           <button
             className={`btn sm ${activeTab === "raw" ? "primary" : "ghost"}`}
@@ -232,7 +233,7 @@ export function ImportModal({ existingCollections = [], initialFiles, onImportSu
               setPreview(null);
             }}
           >
-            📋 Paste Raw (JSON / Doc)
+            <PopIcon name="copy" size={14} /> Paste Raw (JSON / Doc)
           </button>
         </div>
 
@@ -264,7 +265,7 @@ export function ImportModal({ existingCollections = [], initialFiles, onImportSu
                 }}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <div style={{ fontSize: 32, marginBottom: 8 }}>📄</div>
+                <div style={{ fontSize: 32, marginBottom: 8 }}><PopIcon name="file" size={14} /></div>
                 <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
                   Click to browse or drop your file(s) here
                 </div>
@@ -301,7 +302,7 @@ export function ImportModal({ existingCollections = [], initialFiles, onImportSu
                 }}
                 onClick={() => folderInputRef.current?.click()}
               >
-                <div style={{ fontSize: 32, marginBottom: 8 }}>📁</div>
+                <div style={{ fontSize: 32, marginBottom: 8 }}><PopIcon name="folder" size={14} /></div>
                 <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>
                   Select an entire folder of collections & environments
                 </div>
@@ -395,7 +396,7 @@ export function ImportModal({ existingCollections = [], initialFiles, onImportSu
                       <div key={col.id} className="import-item-card">
                         <div className="import-item-header">
                           <span className="import-item-badge">
-                            <span>📁</span> Collection
+                            <span><PopIcon name="folder" size={14} /></span> Collection
                           </span>
                           <span className="import-item-count">{col.children.length} item(s)</span>
                         </div>
@@ -471,7 +472,7 @@ export function ImportModal({ existingCollections = [], initialFiles, onImportSu
                           >
                             {existingCollections.map((c) => (
                               <option key={c.id} value={c.id}>
-                                📁 {c.name} ({c.children.length} items)
+                                <PopIcon name="folder" size={14} /> {c.name} ({c.children.length} items)
                               </option>
                             ))}
                           </select>
@@ -486,10 +487,10 @@ export function ImportModal({ existingCollections = [], initialFiles, onImportSu
                             value={folderPlacementMode}
                             onChange={(e) => setFolderPlacementMode(e.target.value as any)}
                           >
-                            <option value="as-subfolder">📂 Create as new subfolder(s) inside this collection</option>
-                            <option value="root">📁 Merge directly into root of collection</option>
+                            <option value="as-subfolder"><PopIcon name="folderOpen" size={14} /> Create as new subfolder(s) inside this collection</option>
+                            <option value="root"><PopIcon name="folder" size={14} /> Merge directly into root of collection</option>
                             {availableFolders.length > 0 && (
-                              <option value="existing-folder">📥 Place inside existing folder...</option>
+                              <option value="existing-folder"><PopIcon name="download" size={14} /> Place inside existing folder...</option>
                             )}
                           </select>
                         </div>
@@ -504,10 +505,10 @@ export function ImportModal({ existingCollections = [], initialFiles, onImportSu
                               value={selectedFolderId}
                               onChange={(e) => setSelectedFolderId(e.target.value)}
                             >
-                              <option value="">📁 Root (Main collection)</option>
+                              <option value=""><PopIcon name="folder" size={14} /> Root (Main collection)</option>
                               {availableFolders.map((fld) => (
                                 <option key={fld.id} value={fld.id}>
-                                  📂 {fld.name}
+                                  <PopIcon name="folderOpen" size={14} /> {fld.name}
                                 </option>
                               ))}
                             </select>
@@ -530,7 +531,7 @@ export function ImportModal({ existingCollections = [], initialFiles, onImportSu
                       <div key={env.id} className="import-item-card">
                         <div className="import-item-header">
                           <span className="import-item-badge badge-env">
-                            <span>🌐</span> Environment
+                            <span><PopIcon name="globe" size={14} /></span> Environment
                           </span>
                           <span className="import-item-count">{env.variables.length} variable(s)</span>
                         </div>

@@ -8,7 +8,7 @@ export type HttpMethod =
   | "OPTIONS"
   | "WS";
 
-export type ThemeMode = "blue" | "dark" | "light" | "glass" | "pearl" | "graphite";
+export type ThemeMode = "blue" | "dark" | "light" | "glass" | "pearl" | "graphite" | "apple-dark";
 
 export type BodyMode = "none" | "raw" | "json" | "form-urlencoded";
 export type AuthType = "none" | "bearer" | "basic" | "apikey";
@@ -260,12 +260,34 @@ export function snapshotToRequest(
   };
 }
 
+export interface IdeTheme {
+  pulseTheme?: string;
+  ideTheme?: string;
+  accent?: string;
+  accentInk?: string;
+  font?: string;
+  mono?: string;
+}
+
+export interface PulseSettingsPatch {
+  theme?: ThemeMode;
+  followIde?: boolean;
+  panelLayout?: "response-bottom" | "response-right";
+  fontSettings?: { fontSize?: number; fontFamily?: string; codeFontSize?: number; codeFontFamily?: string };
+  requestTimeout?: number;
+  action?: "resetPanelSizes" | "requestState";
+}
+
 declare global {
   interface Window {
     pulseDesktop?: {
       isDesktop: boolean;
       reportViewMode?: (mode: "dashboard" | "studio") => void;
       onViewMode?: (callback: (mode: "dashboard" | "studio") => void) => () => void;
+      onTheme?: (callback: (theme: IdeTheme) => void) => () => void;
+      sendSettings?: (state: unknown) => void;
+      onSettingsUpdate?: (callback: (patch: PulseSettingsPatch) => void) => () => void;
+      openSettings?: () => void;
       platform: string;
       readWorkspace?: () => string | null;
       writeWorkspace?: (data: string) => void;

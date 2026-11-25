@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import PopIcon from "./PopIcon";
 import { createPortal } from "react-dom";
 import type { Collection, Environment, TreeNode } from "../types";
 import { METHOD_COLORS } from "../types";
@@ -369,7 +370,7 @@ export function Sidebar(props: Props) {
             }}
             aria-label="Close Sidebar"
           >
-            ✕
+            <PopIcon name="close" size={14} />
           </button>
         </div>
       )}
@@ -422,7 +423,7 @@ export function Sidebar(props: Props) {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="plus-search-box">
-                <span className="plus-search-icon">🔍</span>
+                <span className="plus-search-icon"><PopIcon name="search" size={14} /></span>
                 <input
                   ref={plusSearchInputRef}
                   className="plus-search-input"
@@ -433,7 +434,7 @@ export function Sidebar(props: Props) {
                 />
                 {plusFilter && (
                   <button className="plus-search-clear" onClick={() => setPlusFilter("")}>
-                    ✕
+                    <PopIcon name="close" size={14} />
                   </button>
                 )}
               </div>
@@ -607,7 +608,7 @@ export function Sidebar(props: Props) {
                   >
                     <Chevron open={!collapsed[col.id]} />
                   </button>
-                  <span className="col-folder-icon">📁</span>
+                  <span className="col-folder-icon"><PopIcon name="folder" size={14} /></span>
                   {editingId === col.id ? (
                     <input
                       type="text"
@@ -658,7 +659,7 @@ export function Sidebar(props: Props) {
                         cursor: "pointer",
                       }}
                     >
-                      ⚡
+                      <PopIcon name="zap" size={14} />
                     </span>
                   )}
                   <div className="tree-actions-group" onClick={(e) => e.stopPropagation()}>
@@ -667,14 +668,14 @@ export function Sidebar(props: Props) {
                       title="Collection Scripts & Settings"
                       onClick={() => props.onEditCollection?.(col.id, "scripts-pre")}
                     >
-                      ⚡
+                      <PopIcon name="zap" size={14} />
                     </button>
                     <button
                       className="tree-action-btn"
                       title="Add Folder inside this collection"
                       onClick={() => props.onNewFolder(col.id, null)}
                     >
-                      +📁
+                      +<PopIcon name="folder" size={14} />
                     </button>
                     <button
                       className="tree-action-btn"
@@ -691,7 +692,7 @@ export function Sidebar(props: Props) {
                         setEditingName(col.name);
                       }}
                     >
-                      ✏️
+                      <PopIcon name="pencil" size={14} />
                     </button>
                     <button
                       className="tree-action-btn danger-hover"
@@ -702,7 +703,7 @@ export function Sidebar(props: Props) {
                       }}
                       aria-label={`Delete collection ${col.name}`}
                     >
-                      ✕
+                      <PopIcon name="close" size={14} />
                     </button>
                     <button
                       className="tree-action-btn"
@@ -799,7 +800,7 @@ export function Sidebar(props: Props) {
                     }}
                     aria-label={`Edit ${env.name}`}
                   >
-                    ✏️
+                    <PopIcon name="pencil" size={14} />
                   </button>
                   <button
                     className="env-action-btn danger-hover"
@@ -810,7 +811,7 @@ export function Sidebar(props: Props) {
                     }}
                     aria-label={`Delete ${env.name}`}
                   >
-                    ✕
+                    <PopIcon name="close" size={14} />
                   </button>
                 </div>
               </div>
@@ -848,7 +849,7 @@ export function Sidebar(props: Props) {
                 onClick={props.onManageEnv}
                 title="Manage all environments and variables"
               >
-                <span>⚙</span> Manage Env
+                <span><PopIcon name="settings" size={14} /></span> Manage Env
               </button>
             </div>
           </>
@@ -869,7 +870,7 @@ export function Sidebar(props: Props) {
               setMenu(null);
             }}
           >
-            ⚡ Scripts & Settings
+            <PopIcon name="zap" size={14} /> Scripts & Settings
           </button>
           <button
             onClick={(e) => {
@@ -1054,7 +1055,7 @@ function NodeList(props: {
                     title="Add Subfolder inside this folder"
                     onClick={() => props.onNewFolder(props.collectionId, node.id)}
                   >
-                    +📁
+                    +<PopIcon name="folder" size={14} />
                   </button>
                   <button
                     className="tree-action-btn"
@@ -1080,7 +1081,7 @@ function NodeList(props: {
                       props.setEditingName(node.name);
                     }}
                   >
-                    ✏️
+                    <PopIcon name="pencil" size={14} />
                   </button>
                   <button
                     className="tree-action-btn danger-hover"
@@ -1090,7 +1091,7 @@ function NodeList(props: {
                       props.onDeleteNode(node.id);
                     }}
                   >
-                    ✕
+                    <PopIcon name="close" size={14} />
                   </button>
                 </div>
               </div>
@@ -1151,14 +1152,14 @@ function NodeList(props: {
                   props.setEditingName(node.name);
                 }}
               >
-                ✏️
+                <PopIcon name="pencil" size={14} />
               </button>
               <button
                 className="tree-action-btn danger-hover"
                 title="Delete request"
                 onClick={() => props.onDeleteNode(node.id)}
               >
-                ✕
+                <PopIcon name="close" size={14} />
               </button>
             </div>
           </div>

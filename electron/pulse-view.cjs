@@ -49,15 +49,69 @@ ipcMain.on('ather:pulse-select', (event, mode) => {
     return
   }
   resize()
-  view.setVisible(true)
+  if (!workspace.overlay) view.setVisible(true)
   if (workspace.rendererReady) view.webContents.send('pulse:select-view', mode)
-  view.webContents.focus()
+  if (!workspace.overlay) view.webContents.focus()
+})
+
+const THEME_KEYS = ['pulseTheme', 'ideTheme', 'accent', 'accentInk', 'font', 'mono', 'wallpaper']
+function cleanTheme(theme) {
+  if (!theme || typeof theme !== 'object') return null
+  const out = {}
+  for (const key of THEME_KEYS) if (typeof theme[key] === 'string' && theme[key].length < 400) out[key] = theme[key]
+  return out
+}
+
+ipcMain.on('ather:pulse-theme', (event, theme) => {
+  if (!workspace || !fromMainFrame(event, workspace.window.webContents)) return
+  workspace.theme = cleanTheme(theme)
+  if (workspace.rendererReady && workspace.theme) workspace.view.webContents.send('pulse:theme', workspace.theme)
+})
+
+// ── One common Settings page: Pulse settings are edited from the IDE's Settings ──
+ipcMain.on('pulse:settings-state', (event, state) => {
+  if (!fromPulse(event) || !state || typeof state !== 'object') return
+  let size = 0
+  try { size = JSON.stringify(state).length } catch { return }
+  if (size > 50000) return
+  workspace.settingsState = state
+  workspace.window.webContents.send('ather:pulse-settings-state', state)
+})
+
+ipcMain.handle('ather:pulse-settings-get', (event) => {
+  if (!workspace || !fromMainFrame(event, workspace.window.webContents)) return null
+  return workspace.settingsState || null
+})
+
+ipcMain.on('ather:pulse-settings-update', (event, patch) => {
+  if (!workspace || !fromMainFrame(event, workspace.window.webContents)) return
+  if (!patch || typeof patch !== 'object') return
+  if (!workspace.view.webContents.isDestroyed()) workspace.view.webContents.send('pulse:settings-update', patch)
+})
+
+ipcMain.on('pulse:open-settings', (event) => {
+  if (!fromPulse(event)) return
+  workspace.window.webContents.send('ather:pulse-open-settings')
+})
+
+// Hide the Pulse view while an IDE overlay (Settings) is open so it isn't covered.
+ipcMain.on('ather:pulse-overlay', (event, open) => {
+  if (!workspace || !fromMainFrame(event, workspace.window.webContents)) return
+  workspace.overlay = Boolean(open)
+  if (workspace.overlay) {
+    workspace.view.setVisible(false)
+    workspace.window.webContents.focus()
+  } else if (workspace.mode) {
+    resize()
+    workspace.view.setVisible(true)
+  }
 })
 
 ipcMain.on('pulse:ready', (event) => {
   if (!fromPulse(event)) return
   workspace.rendererReady = true
   if (workspace.mode) event.sender.send('pulse:select-view', workspace.mode)
+  if (workspace.theme) event.sender.send('pulse:theme', workspace.theme)
 })
 
 ipcMain.on('pulse:view-mode', (event, mode) => {

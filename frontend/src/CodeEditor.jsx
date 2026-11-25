@@ -1,5 +1,6 @@
 import { debuggerValues } from './debuggerValues.js'
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react'
+import PopIcon from './PopupIcons.jsx'
 import { javaHighlight, codeHighlight } from './javaHighlight.js'
 import { getJavaHint } from './javaHints.js'
 import { javaSnippet } from './javaSnippets.js'
@@ -1292,7 +1293,7 @@ export default function CodeEditor({
                   dismissHint()
                 }}
               >
-                ✦ {methodAction.label}
+                <PopIcon name="sparkle" size={14} /> {methodAction.label}
               </button>
               <small style={{ color: 'var(--muted, #888)', display: 'block', marginTop: '2px' }}>
                 Generates <code>{methodAction.preview}</code> (Alt+Enter)
@@ -1309,7 +1310,7 @@ export default function CodeEditor({
                     initializer: getDefaultValueForType(inferredVarType)
                   })
                   setReferenceDraft(null)
-                }}>✦ {action.label} ‘{variableName}’ <small>({inferredVarType})</small></button>
+                }}><PopIcon name="sparkle" size={14} /> {action.label} ‘{variableName}’ <small>({inferredVarType})</small></button>
               ))}
               {declaration && (
                 <form onSubmit={(event) => {
@@ -1406,7 +1407,7 @@ export default function CodeEditor({
       {searchOpen && (
         <div className="in-file-search-bar" role="search" aria-label="Find in file">
           <div className="search-input-wrapper">
-            <span className="search-icon">🔍</span>
+            <span className="search-icon"><PopIcon name="search" size={14} /></span>
             <input
               ref={searchInputRef}
               type="text"
@@ -1442,7 +1443,7 @@ export default function CodeEditor({
             title="Previous match (Shift+Enter)"
             aria-label="Previous match"
           >
-            ▲
+            <PopIcon name="chevronUp" size={14} />
           </button>
           <button
             type="button"
@@ -1452,7 +1453,7 @@ export default function CodeEditor({
             title="Next match (Enter)"
             aria-label="Next match"
           >
-            ▼
+            <PopIcon name="chevronDown" size={14} />
           </button>
           <button
             type="button"
@@ -1512,7 +1513,7 @@ export default function CodeEditor({
                       })
                     }}
                   >
-                    ▷
+                    <PopIcon name="play" size={12} />
                   </button>
                 )}
                 {/* Method-level minimization toggle in editor gutter */}
@@ -1751,7 +1752,7 @@ export default function CodeEditor({
               aria-label={`Diagnostics. ${diagnosticLabel}`}
             >
               <span className="java-diagnostics-icon" aria-hidden="true">
-                {diagnosticStatus === 'success' ? '✓' : diagnosticStatus === 'pending' ? '…' : diagnosticStatus === 'error' ? '✕' : '⚠'}
+                {diagnosticStatus === 'success' ? <PopIcon name="check" size={14} /> : diagnosticStatus === 'pending' ? '…' : diagnosticStatus === 'error' ? <PopIcon name="close" size={14} /> : <PopIcon name="alert" size={14} />}
               </span>
               {problemCount > 0 && <span className="java-diagnostics-count">{problemCount}</span>}
               <span className="java-diagnostics-label">{diagnosticLabel}</span>

@@ -1,4 +1,5 @@
 import { javaOutline } from './javaOutline.js'
+import { langHighlight } from './langHighlight.js'
 
 const keywords = new Set('abstract assert break case catch class const continue default do else enum exports extends final finally for goto if implements import instanceof interface module native new non-sealed open opens package permits private protected provides public record requires return sealed static strictfp super switch synchronized this throw throws to transient try uses var volatile while with yield'.split(' '))
 const types = new Set('boolean byte char double float int long short void'.split(' '))
@@ -148,5 +149,5 @@ export function codeHighlight(path = '', source = '') {
   if (lower.endsWith('.java')) return javaHighlight(path, source)
   if (lower.endsWith('.json') || lower.endsWith('.webmanifest')) return jsonHighlight(source)
   if (lower.endsWith('.yml') || lower.endsWith('.yaml')) return yamlHighlight(source)
-  return null
+  return langHighlight(path, source)
 }

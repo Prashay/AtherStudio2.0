@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import PopIcon from './PopupIcons.jsx'
 import TreeIcon, { fileIconName } from './TreeIcon.jsx'
 
 export function VcsBranchWidget({
@@ -106,7 +107,7 @@ export function VcsBranchWidget({
       {open && (
         <div className="vcs-branch-popup" role="dialog" aria-label="Git branches and actions">
           <div className="vcs-popup-search-row">
-            <span className="vcs-popup-search-ico">⌕</span>
+            <span className="vcs-popup-search-ico"><PopIcon name="search" size={14} /></span>
             <input
               type="text"
               autoFocus
@@ -114,7 +115,7 @@ export function VcsBranchWidget({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
-            <button type="button" className="ghost tiny" title="Refresh Git status" onClick={() => void onRefresh?.()}>↻</button>
+            <button type="button" className="ghost tiny" title="Refresh Git status" onClick={() => void onRefresh?.()}><PopIcon name="refresh" size={14} /></button>
           </div>
 
           {!vcsState?.isRepo ? (
@@ -141,7 +142,7 @@ export function VcsBranchWidget({
                   onClick={() => void runGitAction('pull')}
                 >
                   <span className="vcs-popup-item-left">
-                    <span className="vcs-popup-ico">↙</span>
+                    <span className="vcs-popup-ico"><PopIcon name="download" size={14} /></span>
                     <span>Update Project…</span>
                   </span>
                   <kbd>Ctrl+T</kbd>
@@ -155,7 +156,7 @@ export function VcsBranchWidget({
                   }}
                 >
                   <span className="vcs-popup-item-left">
-                    <span className="vcs-popup-ico">⊶</span>
+                    <span className="vcs-popup-ico"><PopIcon name="git" size={14} /></span>
                     <span>Commit…</span>
                   </span>
                   <kbd>Ctrl+K</kbd>
@@ -167,7 +168,7 @@ export function VcsBranchWidget({
                   onClick={() => void runGitAction('push')}
                 >
                   <span className="vcs-popup-item-left">
-                    <span className="vcs-popup-ico">↗</span>
+                    <span className="vcs-popup-ico"><PopIcon name="external" size={14} /></span>
                     <span>Push…</span>
                   </span>
                   <kbd>Ctrl+Shift+K</kbd>
@@ -200,7 +201,7 @@ export function VcsBranchWidget({
                   }}
                 >
                   <span className="vcs-popup-item-left">
-                    <span className="vcs-popup-ico">🏷</span>
+                    <span className="vcs-popup-ico"><PopIcon name="tag" size={14} /></span>
                     <span>Checkout Tag or Revision…</span>
                   </span>
                 </button>
@@ -235,7 +236,7 @@ export function VcsBranchWidget({
                   <button type="submit" className="primary tiny" disabled={busy || !promptInput.trim()}>
                     {promptMode === 'newBranch' ? 'Create' : promptMode === 'renameBranch' ? 'Rename' : 'Checkout'}
                   </button>
-                  <button type="button" className="ghost tiny" onClick={() => setPromptMode(null)}>✕</button>
+                  <button type="button" className="ghost tiny" onClick={() => setPromptMode(null)}><PopIcon name="close" size={14} /></button>
                 </form>
               )}
 
@@ -255,7 +256,7 @@ export function VcsBranchWidget({
                         }}
                       >
                         <span className="vcs-popup-branch-left">
-                          <span className="vcs-tag-ico" aria-hidden="true">{b.current ? '✓' : '🏷'}</span>
+                          <span className="vcs-tag-ico" aria-hidden="true">{b.current ? <PopIcon name="check" size={14} /> : <PopIcon name="tag" size={14} />}</span>
                           <strong style={{ fontWeight: b.current ? 700 : 400 }}>{b.name}</strong>
                           {b.current && <small style={{ color: '#6897bb', fontSize: 10 }}>(current)</small>}
                         </span>
@@ -266,7 +267,7 @@ export function VcsBranchWidget({
                         <div className="vcs-branch-action-sheet" role="menu">
                           <div className="vcs-branch-action-sheet-header">
                             <span>Branch: {b.name}</span>
-                            <button type="button" className="vcs-close-tiny" onClick={() => setSelectedBranchMenu(null)}>✕</button>
+                            <button type="button" className="vcs-close-tiny" onClick={() => setSelectedBranchMenu(null)}><PopIcon name="close" size={14} /></button>
                           </div>
                           {!b.current && (
                             <button
@@ -368,7 +369,7 @@ export function VcsBranchWidget({
                           }}
                         >
                           <span className="vcs-popup-branch-left">
-                            <span className="vcs-tag-ico" aria-hidden="true" style={{ color: '#3574f0' }}>☁</span>
+                            <span className="vcs-tag-ico" aria-hidden="true" style={{ color: 'var(--ui-accent)' }}><PopIcon name="cloud" size={14} /></span>
                             <span>{rb.name}</span>
                           </span>
                           <span className="vcs-branch-chevron">›</span>
@@ -378,7 +379,7 @@ export function VcsBranchWidget({
                           <div className="vcs-branch-action-sheet" role="menu">
                             <div className="vcs-branch-action-sheet-header">
                               <span>Remote: {rb.name}</span>
-                              <button type="button" className="vcs-close-tiny" onClick={() => setSelectedBranchMenu(null)}>✕</button>
+                              <button type="button" className="vcs-close-tiny" onClick={() => setSelectedBranchMenu(null)}><PopIcon name="close" size={14} /></button>
                             </div>
                             <button
                               type="button"
@@ -435,7 +436,7 @@ export function VcsBranchWidget({
                         onClick={() => void runGitAction('checkout', { branch: t })}
                       >
                         <span className="vcs-popup-branch-left">
-                          <span className="vcs-tag-ico" aria-hidden="true">🏷</span>
+                          <span className="vcs-tag-ico" aria-hidden="true"><PopIcon name="tag" size={14} /></span>
                           <span>{t}</span>
                         </span>
                         <span className="vcs-branch-chevron">Checkout</span>
@@ -545,7 +546,7 @@ export function VcsCommitPanel({
       <div className="vcs-commit-panel" role="region" aria-label="Version Control Commit">
         <div className="side-head">
           <span className="vcs-side-title">Commit</span>
-          <button type="button" className="ghost tiny" onClick={onClose}>✕</button>
+          <button type="button" className="ghost tiny" onClick={onClose}><PopIcon name="close" size={14} /></button>
         </div>
         <div className="vcs-empty-changes" style={{ padding: 16 }}>
           <p>This workspace is not a Git repository.</p>
@@ -574,9 +575,9 @@ export function VcsCommitPanel({
           )}
         </span>
         <div style={{ display: 'flex', gap: 4 }}>
-          <button type="button" className="ghost tiny" title="Refresh Git status" onClick={() => void onRefresh?.()}>↻</button>
+          <button type="button" className="ghost tiny" title="Refresh Git status" onClick={() => void onRefresh?.()}><PopIcon name="refresh" size={14} /></button>
           <button type="button" className="ghost tiny" title="Show Git Log" onClick={onOpenLog}>Log</button>
-          <button type="button" className="ghost tiny" title="Close Commit panel" onClick={onClose}>✕</button>
+          <button type="button" className="ghost tiny" title="Close Commit panel" onClick={onClose}><PopIcon name="close" size={14} /></button>
         </div>
       </div>
 
@@ -1056,12 +1057,12 @@ export default function VcsLogPanel({
             <span>Console</span>
             {consoleLog.length > 0 && <span className="vcs-console-badge">{consoleLog.length}</span>}
           </button>
-          <button type="button" className="vcs-header-icon-btn" title="Refresh Git Log" onClick={() => void fetchLog()}>↻</button>
+          <button type="button" className="vcs-header-icon-btn" title="Refresh Git Log" onClick={() => void fetchLog()}><PopIcon name="refresh" size={14} /></button>
         </div>
 
         <div className="vcs-header-right-actions">
-          <button type="button" className="vcs-header-icon-btn" title="Fetch All Remotes" onClick={() => void executeGitAction('fetch', {}, 'fetch --all --prune')}>⇄</button>
-          <button type="button" className="vcs-header-icon-btn" onClick={onHide} title="Hide Git Window" aria-label="Hide Git panel">−</button>
+          <button type="button" className="vcs-header-icon-btn" title="Fetch All Remotes" onClick={() => void executeGitAction('fetch', {}, 'fetch --all --prune')}><PopIcon name="swap" size={14} /></button>
+          <button type="button" className="vcs-header-icon-btn" onClick={onHide} title="Hide Git Window" aria-label="Hide Git panel"><PopIcon name="minus" size={14} /></button>
         </div>
       </div>
 
@@ -1078,10 +1079,10 @@ export default function VcsLogPanel({
           <div className="vcs-left-rail" aria-label="Branches actions">
             <button type="button" title="Toggle Branches Pane" onClick={() => setBranchesWidth(branchesWidth > 160 ? 150 : 240)}>‹</button>
             <button type="button" title="New Branch…" onClick={() => setShowNewBranchInput(!showNewBranchInput)}>＋</button>
-            <button type="button" title="Checkout Selected Branch" disabled={branchFilter === '--all'} onClick={() => branchFilter !== '--all' && void executeGitAction('checkout', { branch: branchFilter }, `checkout ${branchFilter}`)}>🏷</button>
-            <button type="button" title="Update / Pull Current Branch" disabled={busy} onClick={() => void executeGitAction('pull', {}, 'pull')}>↙</button>
-            <button type="button" title="Fetch All Remotes" disabled={busy} onClick={() => void executeGitAction('fetch', {}, 'fetch --all --prune')}>⇄</button>
-            <button type="button" title="Filter by Current Branch" onClick={() => setBranchFilter(vcsState?.branch || '--all')}>★</button>
+            <button type="button" title="Checkout Selected Branch" disabled={branchFilter === '--all'} onClick={() => branchFilter !== '--all' && void executeGitAction('checkout', { branch: branchFilter }, `checkout ${branchFilter}`)}><PopIcon name="tag" size={14} /></button>
+            <button type="button" title="Update / Pull Current Branch" disabled={busy} onClick={() => void executeGitAction('pull', {}, 'pull')}><PopIcon name="download" size={14} /></button>
+            <button type="button" title="Fetch All Remotes" disabled={busy} onClick={() => void executeGitAction('fetch', {}, 'fetch --all --prune')}><PopIcon name="swap" size={14} /></button>
+            <button type="button" title="Filter by Current Branch" onClick={() => setBranchFilter(vcsState?.branch || '--all')}><PopIcon name="star" size={14} /></button>
           </div>
 
           {/* Left: Branches tree */}
@@ -1093,7 +1094,7 @@ export default function VcsLogPanel({
               title="Drag to resize Branches pane (Double-click to reset)"
             />
             <div className="vcs-branch-search-bar">
-              <span>⌕</span>
+              <span><PopIcon name="search" size={14} /></span>
               <input
                 type="text"
                 placeholder="Search branches…"
@@ -1102,7 +1103,7 @@ export default function VcsLogPanel({
                 onChange={(e) => setBranchSearch(e.target.value)}
               />
               {branchSearch && (
-                <button type="button" className="ghost tiny" onClick={() => setBranchSearch('')} style={{ border: 0, padding: '0 4px', color: '#8c919d' }}>✕</button>
+                <button type="button" className="ghost tiny" onClick={() => setBranchSearch('')} style={{ border: 0, padding: '0 4px', color: '#8c919d' }}><PopIcon name="close" size={14} /></button>
               )}
             </div>
 
@@ -1150,7 +1151,7 @@ export default function VcsLogPanel({
                     onDoubleClick={() => !b.current && void executeGitAction('checkout', { branch: b.name }, `checkout ${b.name}`)}
                     title={b.current ? `${b.name} (Current branch)` : `${b.name} (Double-click to checkout)`}
                   >
-                    <span className="vcs-tag-ico" aria-hidden="true">{b.current ? '✓' : '🏷'}</span>
+                    <span className="vcs-tag-ico" aria-hidden="true">{b.current ? <PopIcon name="check" size={14} /> : <PopIcon name="tag" size={14} />}</span>
                     <strong style={{ fontWeight: b.current ? 700 : 400 }}>{b.name}</strong>
                     {b.current && <small style={{ marginLeft: 'auto', color: '#6897bb', fontSize: 10 }}>HEAD</small>}
                   </button>
@@ -1170,7 +1171,7 @@ export default function VcsLogPanel({
                       onDoubleClick={() => void executeGitAction('checkout', { branch: rb.name }, `checkout ${rb.name}`)}
                       title={`${rb.name} (Double-click to checkout local tracking branch)`}
                     >
-                      <span className="vcs-tag-ico" aria-hidden="true" style={{ color: '#3574f0' }}>☁</span>
+                      <span className="vcs-tag-ico" aria-hidden="true" style={{ color: 'var(--ui-accent)' }}><PopIcon name="cloud" size={14} /></span>
                       <span>{rb.name}</span>
                     </button>
                   ))}
@@ -1190,7 +1191,7 @@ export default function VcsLogPanel({
                       onDoubleClick={() => void executeGitAction('checkout', { branch: t }, `checkout ${t}`)}
                       title={`Tag: ${t}`}
                     >
-                      <span className="vcs-tag-ico" aria-hidden="true">🏷</span>
+                      <span className="vcs-tag-ico" aria-hidden="true"><PopIcon name="tag" size={14} /></span>
                       <span>{t}</span>
                     </button>
                   ))}
@@ -1203,7 +1204,7 @@ export default function VcsLogPanel({
           <div className="vcs-commits-pane" role="region" aria-label="Commit history">
             <div className="vcs-commits-filter-bar">
               <div className="vcs-text-search-box">
-                <span className="vcs-search-loupe">⌕</span>
+                <span className="vcs-search-loupe"><PopIcon name="search" size={14} /></span>
                 <input
                   type="text"
                   placeholder="Filter commits by text or hash…"
@@ -1211,7 +1212,7 @@ export default function VcsLogPanel({
                   onChange={(e) => setSearch(e.target.value)}
                 />
                 {search && (
-                  <button type="button" className="ghost tiny" onClick={() => setSearch('')} style={{ border: 0, padding: '0 4px', color: '#8c919d' }}>✕</button>
+                  <button type="button" className="ghost tiny" onClick={() => setSearch('')} style={{ border: 0, padding: '0 4px', color: '#8c919d' }}><PopIcon name="close" size={14} /></button>
                 )}
                 <button
                   type="button"
@@ -1241,7 +1242,7 @@ export default function VcsLogPanel({
                       setUserDropdownOpen(false)
                     }}
                   >
-                    Branch: {branchFilter === '--all' ? 'All' : branchFilter} ⌄
+                    Branch: {branchFilter === '--all' ? 'All' : branchFilter} <PopIcon name="chevronDown" size={14} />
                   </button>
                   {branchDropdownOpen && (
                     <div className="vcs-filter-menu" role="menu">
@@ -1294,7 +1295,7 @@ export default function VcsLogPanel({
                       setBranchDropdownOpen(false)
                     }}
                   >
-                    User: {authorFilter || 'All'} ⌄
+                    User: {authorFilter || 'All'} <PopIcon name="chevronDown" size={14} />
                   </button>
                   {userDropdownOpen && (
                     <div className="vcs-filter-menu" role="menu">
@@ -1321,8 +1322,8 @@ export default function VcsLogPanel({
               </div>
 
               <div className="vcs-commits-toolbar-icons">
-                <button type="button" title="Refresh Git Log" onClick={() => void fetchLog()}>↻</button>
-                <button type="button" title="Fetch All Remotes" onClick={() => void executeGitAction('fetch', {}, 'fetch --all --prune')}>↓↑</button>
+                <button type="button" title="Refresh Git Log" onClick={() => void fetchLog()}><PopIcon name="refresh" size={14} /></button>
+                <button type="button" title="Fetch All Remotes" onClick={() => void executeGitAction('fetch', {}, 'fetch --all --prune')}><PopIcon name="swap" size={14} /></button>
               </div>
             </div>
 
@@ -1401,7 +1402,7 @@ export default function VcsLogPanel({
                 disabled={!selectedCommit}
                 title="View previous commit git diff (⇄)"
               >
-                Diff ⇄
+                Diff <PopIcon name="swap" size={14} />
               </button>
 
               {selectedCommit && (
@@ -1414,7 +1415,7 @@ export default function VcsLogPanel({
                     appendConsole('copy', `Copied commit hash ${selectedCommit.hash}`)
                   }}
                 >
-                  <code>{selectedCommit.shortHash}</code> 📋
+                  <code>{selectedCommit.shortHash}</code> <PopIcon name="copy" size={14} />
                 </button>
               )}
             </div>
@@ -1456,7 +1457,7 @@ export default function VcsLogPanel({
                           onClick={() => setDetailTab('files')}
                           style={{ padding: '2px 5px', fontSize: 11 }}
                         >
-                          ✕
+                          <PopIcon name="close" size={14} />
                         </button>
                       </div>
                     </div>

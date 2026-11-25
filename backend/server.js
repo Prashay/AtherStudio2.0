@@ -3,7 +3,6 @@ const { mountTerminal } = require('./terminal')
 const { mountMaven } = require('./maven')
 const { mountJavaValidation } = require('./javaValidation')
 const { mountJavaFormat } = require('./javaFormat')
-const { mountNewProject } = require('./newProject')
 const express = require('express')
 const cors = require('cors')
 const fs = require('fs')
@@ -352,6 +351,69 @@ app.post('/api/workspace', (req, res) => {
   }
 })
 
+app.post('/api/project/new', (req, res) => {
+  try {
+    const name = String(req.body.name || '').trim()
+    if (!name || /[<>:"/\\|?*]/.test(name) || /[. ]$/.test(name) || name.startsWith('.')) {
+      return res.status(400).json({ error: 'Enter a valid project name without path separators.' })
+    }
+    const parent = assertBrowsable(String(req.body.parent || '').trim() || HOME)
+    if (!fs.existsSync(parent)) fs.mkdirSync(parent, { recursive: true })
+    if (!fs.statSync(parent).isDirectory()) {
+      return res.status(400).json({ error: 'The location is not a directory.' })
+    }
+    const abs = assertBrowsable(path.join(parent, name))
+    if (fs.existsSync(abs)) return res.status(409).json({ error: 'A folder with that name already exists.' })
+
+    const template = req.body.template === 'empty' ? 'empty' : 'maven'
+    fs.mkdirSync(abs, { recursive: true })
+    if (template === 'maven') {
+      const artifactId = name.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'app'
+      const pkgDir = path.join(abs, 'src', 'main', 'java', 'com', 'example')
+      fs.mkdirSync(pkgDir, { recursive: true })
+      fs.mkdirSync(path.join(abs, 'src', 'main', 'resources'), { recursive: true })
+      fs.mkdirSync(path.join(abs, 'src', 'test', 'java', 'com', 'example'), { recursive: true })
+      fs.writeFileSync(path.join(abs, 'pom.xml'), `<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.example</groupId>
+  <artifactId>${artifactId}</artifactId>
+  <version>1.0-SNAPSHOT</version>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+</project>
+`)
+      fs.writeFileSync(path.join(pkgDir, 'Main.java'), `package com.example;
+
+public class Main {
+    public static void main(String[] args) {
+        System.out.println("Hello, World!");
+    }
+}
+`)
+      fs.writeFileSync(path.join(abs, '.gitignore'), 'target/\n.idea/\n*.class\n')
+    }
+
+    workspaceRoot = abs
+    const tree = walkTree(abs, 0, DEFAULT_TREE_DEPTH, abs)
+    res.json({
+      ok: true,
+      root: root(),
+      name: path.basename(root()),
+      tree,
+      mainFile: template === 'maven' ? 'src/main/java/com/example/Main.java' : null
+    })
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message })
+  }
+})
+
 app.get('/api/browse', (req, res) => {
   try {
     const requested = String(req.query.path || HOME)
@@ -653,7 +715,6 @@ mountJavaValidation(app, { root })
 mountJavaFormat(app)
 mountVcs(app, { root })
 mountTerminal(app, { root })
-mountNewProject(app, { assertBrowsable })
 
 const distCandidates = [
   path.join(__dirname, '..', 'frontend', 'dist'),

@@ -418,7 +418,6 @@ function setupApplicationMenu() {
           label: 'New Project…',
           click: () => mainWindow?.webContents.send('menu-action', 'new-project')
         },
-        { type: 'separator' },
         {
           label: 'New File…',
           accelerator: 'CmdOrCtrl+N',
@@ -732,6 +731,16 @@ ipcMain.handle('dialog-show-open-folder', async (_event, { defaultPath } = {}) =
   return res
 })
 
+ipcMain.handle('dialog-choose-folder', async (_event, { title, defaultPath } = {}) => {
+  const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
+  return dialog.showOpenDialog(parent, {
+    title: title || 'Choose Folder',
+    buttonLabel: 'Select',
+    defaultPath: defaultPath || os.homedir(),
+    properties: ['openDirectory', 'createDirectory']
+  })
+})
+
 ipcMain.handle('dialog-show-open-file', async (_event, options = {}) => {
   const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
   return await dialog.showOpenDialog(parent, {
@@ -750,12 +759,12 @@ ipcMain.handle('dialog-show-save-file', async (_event, options = {}) => {
 })
 
 // Apple-style sleek modal input prompt for Electron
-function showPromptDialog({ message = 'Enter name:', title = 'New Item', defaultValue = '' } = {}) {
+function showPromptDialog({ message = 'Enter name:', title = 'New Item', defaultValue = '', theme = {} } = {}) {
   return new Promise((resolve) => {
     const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null
     const promptWin = new BrowserWindow({
-      width: 440,
-      height: 215,
+      width: 380,
+      height: 178,
       parent: parent,
       modal: Boolean(parent),
       show: false,
@@ -763,7 +772,7 @@ function showPromptDialog({ message = 'Enter name:', title = 'New Item', default
       resizable: false,
       alwaysOnTop: true,
       center: true,
-      backgroundColor: '#121620',
+      backgroundColor: /^#[0-9a-f]{6}$/i.test(theme?.bg || '') ? theme.bg : '#211d1c',
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true
@@ -795,9 +804,32 @@ function showPromptDialog({ message = 'Enter name:', title = 'New Item', default
       } catch {}
     })
 
-    const safeTitle = String(title || 'New Item').replace(/"/g, '&quot;')
-    const safeMsg = String(message || 'Enter name:').replace(/"/g, '&quot;')
-    const safeDef = JSON.stringify(String(defaultValue || ''))
+    const esc = (value) => String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+    const safeTitle = esc(title || 'New Item')
+    const safeMsg = esc(message || 'Enter name:')
+    const safeDef = JSON.stringify(String(defaultValue || '')).replace(/</g, '\\u003c')
+    const kind = String(title || '').toLowerCase()
+    const iconPaths = kind.includes('java') || kind.includes('kotlin')
+      ? 'M6 10h11v4a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5z|M17 11h1.5a2.5 2.5 0 0 1 0 5H17|M9 3c0 1.5 1.5 1.5 1.5 3S9 7.5 9 9|M13 3c0 1.5 1.5 1.5 1.5 3S13 7.5 13 9'
+      : kind.includes('folder') || kind.includes('directory') || kind.includes('package')
+        ? 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z|M12 10v6|M9 13h6'
+        : kind.includes('rename')
+          ? 'M4 20h4L19 9l-4-4L4 16z|M14 6l4 4'
+          : 'M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z|M14 3v5h5|M12 11v6|M9 14h6'
+    const cssVal = (value, fallback) => (typeof value === 'string' && value && value.length < 300 && !/[<>{};\\]/.test(value) ? value : fallback)
+    const t = theme && typeof theme === 'object' ? theme : {}
+    const themeVars = [
+      `--accent: ${cssVal(t.accent, '#ff7624')}`,
+      `--ink: ${cssVal(t.ink, '#ffffff')}`,
+      `--font: ${cssVal(t.font, 'Roboto, Arial, sans-serif')}, Roboto, Arial, sans-serif`,
+      `--text: ${cssVal(t.text, t.light ? '#1d1d1f' : '#f6f0e9')}`,
+      `--muted: ${cssVal(t.muted, t.light ? '#646469' : '#bfb5ad')}`,
+      `--card: ${cssVal(t.card, '#3a2f2a')}`,
+      `--bg: ${cssVal(t.bg, '#221d1c')}`,
+      `--tone: ${t.light ? '#000000' : '#ffffff'}`
+    ].join('; ')
+    const iconSvg = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+      iconPaths.split('|').map((d) => '<path d="' + d + '"/>').join('') + '</svg>'
 
     const promptHtml = `<!DOCTYPE html>
 <html>
@@ -805,98 +837,64 @@ function showPromptDialog({ message = 'Enter name:', title = 'New Item', default
   <meta charset="utf-8">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root { ${themeVars}; }
+    html, body { height: 100%; overflow: hidden; }
     body {
-      background: #141824;
-      color: #f8fafc;
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
-      padding: 20px 22px;
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-      border: 1px solid rgba(255, 255, 255, 0.14);
-      border-radius: 12px;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-app-region: drag;
+      display: flex; flex-direction: column; gap: 14px; padding: 16px;
+      color: var(--text); font: 400 13px/1.45 var(--font);
+      background: radial-gradient(120% 70% at 0% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 60%), linear-gradient(160deg, var(--card), var(--bg) 60%);
+      border: 1px solid color-mix(in srgb, var(--accent) 22%, color-mix(in srgb, var(--tone) 10%, transparent));
+      user-select: none; -webkit-user-select: none; -webkit-app-region: drag;
+      animation: in .18s ease-out both;
     }
-    .title {
-      font-size: 11px;
-      font-weight: 700;
-      color: #38bdf8;
-      margin-bottom: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
+    @keyframes in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .head { display: flex; align-items: center; gap: 12px; }
+    .badge {
+      flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; color: var(--ink);
+      background: linear-gradient(140deg, color-mix(in srgb, var(--accent) 65%, white), var(--accent) 55%, color-mix(in srgb, var(--accent) 75%, black));
+      box-shadow: 0 8px 18px color-mix(in srgb, var(--accent) 30%, transparent), inset 0 1px #ffffff59;
     }
-    .message {
-      font-size: 14px;
-      font-weight: 500;
-      color: #e2e8f0;
-      margin-bottom: 14px;
+    .titles { display: grid; min-width: 0; }
+    .title { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+    .message { color: var(--muted); font-size: 12px; }
+    .field {
+      display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px;
+      color: var(--muted); background: color-mix(in srgb, var(--bg) 80%, black); border: 1px solid color-mix(in srgb, var(--tone) 12%, transparent); border-radius: 10px;
+      transition: border-color .15s, box-shadow .15s; -webkit-app-region: no-drag;
     }
-    input {
-      width: 100%;
-      background: #090c12;
-      border: 1px solid #334155;
-      color: #ffffff;
-      padding: 9px 12px;
-      border-radius: 6px;
-      font-size: 14px;
-      outline: none;
-      margin-bottom: 16px;
-      -webkit-app-region: no-drag;
-    }
-    input:focus {
-      border-color: #38bdf8;
-      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
-    }
-    .actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-      margin-top: auto;
-      -webkit-app-region: no-drag;
-    }
+    .field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+    input { flex: 1; min-width: 0; height: 100%; color: var(--text); background: transparent; border: 0; outline: 0; font: inherit; user-select: text; }
+    .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: auto; -webkit-app-region: no-drag; }
     button {
-      padding: 7px 18px;
-      border-radius: 6px;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      border: none;
-      transition: all 0.15s ease;
+      display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px;
+      font: 500 13px var(--font); border-radius: 10px; cursor: pointer; transition: filter .15s, background .15s, transform .1s;
     }
-    .cancel {
-      background: rgba(255, 255, 255, 0.08);
-      color: #94a3b8;
-    }
-    .cancel:hover {
-      background: rgba(255, 255, 255, 0.14);
-      color: #f1f5f9;
-    }
-    .confirm {
-      background: #0284c7;
-      color: #ffffff;
-    }
-    .confirm:hover {
-      background: #0369a1;
-    }
+    button:active { transform: translateY(1px); }
+    .cancel { color: var(--text); background: color-mix(in srgb, var(--tone) 6%, transparent); border: 1px solid color-mix(in srgb, var(--tone) 14%, transparent); }
+    .cancel:hover { background: color-mix(in srgb, var(--tone) 11%, transparent); }
+    .confirm { color: var(--ink); background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, white), color-mix(in srgb, var(--accent) 90%, black)); border: 1px solid color-mix(in srgb, var(--accent) 70%, white); box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 28%, transparent), inset 0 1px #ffffff40; }
+    .confirm:hover { filter: brightness(1.08); }
   </style>
 </head>
 <body>
-  <div class="title">${safeTitle}</div>
-  <div class="message">${safeMsg}</div>
-  <input id="prompt-input" type="text" autofocus autocomplete="off" spellcheck="false" />
+  <div class="head">
+    <span class="badge">${iconSvg}</span>
+    <div class="titles"><div class="title">${safeTitle}</div><div class="message">${safeMsg}</div></div>
+  </div>
+  <label class="field">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></svg>
+    <input id="prompt-input" type="text" autofocus autocomplete="off" spellcheck="false" />
+  </label>
   <div class="actions">
     <button class="cancel" id="btn-cancel" type="button">Cancel</button>
-    <button class="confirm" id="btn-ok" type="button">OK</button>
+    <button class="confirm" id="btn-ok" type="button">${kind.startsWith('new') ? 'Create' : 'OK'}
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+    </button>
   </div>
   <script>
     const input = document.getElementById('prompt-input');
     input.value = ${safeDef};
-    setTimeout(() => {
-      input.focus();
-      input.select();
-    }, 50);
+    setTimeout(() => { input.focus(); input.select(); }, 50);
     function submitVal(val) {
       window.location.href = 'prompt-action://dialog?value=' + encodeURIComponent(val === null ? '__CANCELLED__' : val);
     }

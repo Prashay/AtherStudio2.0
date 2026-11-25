@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PopIcon from "./PopIcon";
 
 interface Props {
   isOpen: boolean;
@@ -206,7 +207,7 @@ export function AppleWelcomeModal({ isOpen, onClose }: Props) {
             <div className="ios-features-list">
               <div className="ios-feature-row">
                 <div className="ios-feature-badge badge-blue">
-                  <span>⚡</span>
+                  <span><PopIcon name="zap" size={14} /></span>
                 </div>
                 <div className="ios-feature-text">
                   <div className="ios-feature-title">Lightning API Proxy & Mocks</div>
@@ -218,7 +219,7 @@ export function AppleWelcomeModal({ isOpen, onClose }: Props) {
 
               <div className="ios-feature-row">
                 <div className="ios-feature-badge badge-purple">
-                  <span>📁</span>
+                  <span><PopIcon name="folder" size={14} /></span>
                 </div>
                 <div className="ios-feature-text">
                   <div className="ios-feature-title">Universal Collection Parser</div>
@@ -230,7 +231,7 @@ export function AppleWelcomeModal({ isOpen, onClose }: Props) {
 
               <div className="ios-feature-row">
                 <div className="ios-feature-badge badge-green">
-                  <span>🔒</span>
+                  <span><PopIcon name="lock" size={14} /></span>
                 </div>
                 <div className="ios-feature-text">
                   <div className="ios-feature-title">Dynamic Environment Vault</div>
@@ -245,7 +246,7 @@ export function AppleWelcomeModal({ isOpen, onClose }: Props) {
             <div className="ios-footer-block">
               <button className="ios-cta-btn" onClick={handleDismiss} autoFocus>
                 <span className="cta-label">Get Started</span>
-                <span className="cta-arrow">→</span>
+                <span className="cta-arrow"><PopIcon name="arrow" size={14} /></span>
               </button>
 
               <div className="ios-toggle-row">

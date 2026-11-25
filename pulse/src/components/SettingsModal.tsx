@@ -1,4 +1,5 @@
 import { useEffect, useState, type FC } from "react";
+import PopIcon from "./PopIcon";
 import type { ThemeMode } from "../types";
 
 export interface FontSettings {
@@ -96,6 +97,18 @@ export const THEME_PRESETS: ThemePreset[] = [
     accent: "#285ac5",
     textColor: "#182334",
     textMute: "#526074",
+  },
+  {
+    id: "apple-dark",
+    name: "Apple Dark",
+    badge: "DARK",
+    desc: "Liquid graphite glass over a warm wallpaper with Apple blue controls",
+    bg: "#1c1c1e",
+    sidebarBg: "#2c2c2e",
+    cardBg: "#3a3a3c",
+    accent: "#0a84ff",
+    textColor: "#f5f5f7",
+    textMute: "#a1a1a6",
   },
 ];
 
@@ -282,7 +295,7 @@ export const SettingsModal: FC<Props> = ({
       >
         <div className="settings-modal-head">
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 20 }}>⚙️</span>
+            <span style={{ fontSize: 20 }}><PopIcon name="settings" size={14} /></span>
             <div>
               <h2 style={{ margin: 0, fontSize: 18 }}>Preferences & Studio Settings</h2>
               <p className="muted" style={{ margin: "2px 0 0", fontSize: 12 }}>
@@ -291,7 +304,7 @@ export const SettingsModal: FC<Props> = ({
             </div>
           </div>
           <button className="modal-close-btn" onClick={onClose} aria-label="Close settings">
-            ✕
+            <PopIcon name="close" size={14} />
           </button>
         </div>
 
@@ -301,7 +314,7 @@ export const SettingsModal: FC<Props> = ({
             className={`settings-nav-tab ${activeTab === "theme" ? "active" : ""}`}
             onClick={() => setActiveTab("theme")}
           >
-            🎨 Themes & Appearance
+            <PopIcon name="palette" size={14} /> Themes & Appearance
           </button>
           <button
             className={`settings-nav-tab ${activeTab === "typography" ? "active" : ""}`}
@@ -313,13 +326,13 @@ export const SettingsModal: FC<Props> = ({
             className={`settings-nav-tab ${activeTab === "layout" ? "active" : ""}`}
             onClick={() => setActiveTab("layout")}
           >
-            ◫ Panel Layout & Workspace
+            <PopIcon name="columns" size={14} /> Panel Layout & Workspace
           </button>
           <button
             className={`settings-nav-tab ${activeTab === "network" ? "active" : ""}`}
             onClick={() => setActiveTab("network")}
           >
-            ⚡ Network & Timeout
+            <PopIcon name="zap" size={14} /> Network & Timeout
           </button>
         </div>
 
@@ -376,7 +389,7 @@ export const SettingsModal: FC<Props> = ({
                           <span className="theme-card-badge">{t.badge}</span>
                         </span>
                         <span className="theme-card-desc">{t.desc}</span>
-                        {isSelected && <span className="theme-card-active-indicator">✓ Active theme</span>}
+                        {isSelected && <span className="theme-card-active-indicator"><PopIcon name="check" size={14} /> Active theme</span>}
                       </span>
                     </button>
                   );
@@ -414,7 +427,7 @@ export const SettingsModal: FC<Props> = ({
                   disabled={localSettings.fontSize <= UI_FONT_SIZE.min}
                   title="Decrease font size"
                 >
-                  A−
+                  A<PopIcon name="minus" size={14} />
                 </button>
                 <div className="settings-pills">
                   {sizePresets.map((size) => (
@@ -488,7 +501,7 @@ export const SettingsModal: FC<Props> = ({
                     disabled={localSettings.codeFontSize <= CODE_FONT_SIZE.min}
                     title="Decrease code size"
                   >
-                    −
+                    <PopIcon name="minus" size={14} />
                   </button>
                   <button
                     className="btn sm"
@@ -587,7 +600,7 @@ export const SettingsModal: FC<Props> = ({
                     <div className="mockup-sidebar">Sidebar</div>
                     <div className="mockup-center-v">
                       <div className="mockup-request">Request Panel</div>
-                      <div className="mockup-divider-h">⋯ drag to resize ⋯</div>
+                      <div className="mockup-divider-h"><PopIcon name="more" size={14} /> drag to resize <PopIcon name="more" size={14} /></div>
                       <div className="mockup-response active-mock">Response Pane (Bottom)</div>
                     </div>
                     <div className="mockup-right-col">
@@ -619,7 +632,7 @@ export const SettingsModal: FC<Props> = ({
                     <div className="mockup-sidebar">Sidebar</div>
                     <div className="mockup-center-v">
                       <div className="mockup-request">Request Panel</div>
-                      <div className="mockup-divider-h">⋯ drag to resize ⋯</div>
+                      <div className="mockup-divider-h"><PopIcon name="more" size={14} /> drag to resize <PopIcon name="more" size={14} /></div>
                       <div className="mockup-snippet active-mock">Code Snippet (Bottom Drawer)</div>
                     </div>
                     <div className="mockup-right-col">
@@ -720,7 +733,7 @@ export const SettingsModal: FC<Props> = ({
 
             <div className="settings-section" style={{ background: "var(--bg-2)", padding: 14, borderRadius: 6, border: "1px solid var(--border)" }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                <span style={{ fontSize: 18 }}>💡</span>
+                <span style={{ fontSize: 18 }}><PopIcon name="bulb" size={14} /></span>
                 <div style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.6 }}>
                   <div><b>Per-Environment Override:</b> You can set a <code>timeout</code> variable in any Environment (e.g. <code>timeout = 60000</code> or <code>timeout = 0</code>) to customize timeouts per environment.</div>
                   <div style={{ marginTop: 4 }}><b>Why timeout was 30000ms:</b> Previously, request proxy layers defaulted strictly to a 30-second abort timer. Pulse now respects <code>0</code> (unlimited) and custom timeout configurations across native desktop IPC, local proxy, and direct fetch.</div>

@@ -1,4 +1,5 @@
 import { useState, useEffect, type FC } from "react";
+import PopIcon from "./PopIcon";
 import type { Collection, KeyValue } from "../types";
 import { KeyValueEditor } from "./KeyValueEditor";
 import { collectRequests } from "../request";
@@ -120,7 +121,7 @@ export const CollectionModal: FC<Props> = ({
                 background: "var(--accent-soft)",
               }}
             >
-              📁
+              <PopIcon name="folder" size={14} />
             </span>
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -174,7 +175,7 @@ export const CollectionModal: FC<Props> = ({
               borderRadius: 4,
             }}
           >
-            ✕
+            <PopIcon name="close" size={14} />
           </button>
         </div>
 
@@ -208,7 +209,7 @@ export const CollectionModal: FC<Props> = ({
               gap: 6,
             }}
           >
-            <span>⚡ Pre-request Scripts</span>
+            <span><PopIcon name="zap" size={14} /> Pre-request Scripts</span>
             {hasPreScript && (
               <span
                 style={{
@@ -239,7 +240,7 @@ export const CollectionModal: FC<Props> = ({
               gap: 6,
             }}
           >
-            <span>🧪 Tests (Post-response)</span>
+            <span><PopIcon name="flask" size={14} /> Tests (Post-response)</span>
             {hasPostScript && (
               <span
                 style={{
@@ -270,7 +271,7 @@ export const CollectionModal: FC<Props> = ({
               gap: 6,
             }}
           >
-            <span>🏷️ Variables</span>
+            <span><PopIcon name="tag" size={14} /> Variables</span>
             {varCount > 0 && (
               <span
                 style={{
@@ -301,7 +302,7 @@ export const CollectionModal: FC<Props> = ({
               cursor: "pointer",
             }}
           >
-            ℹ️ Overview
+            <PopIcon name="info" size={14} /> Overview
           </button>
         </div>
 
@@ -334,7 +335,7 @@ export const CollectionModal: FC<Props> = ({
                   }}
                 >
                   <div style={{ fontWeight: 600, color: "var(--accent)", marginBottom: 4, display: "flex", alignItems: "center", gap: 5 }}>
-                    <span>⚡</span> Execution Order
+                    <span><PopIcon name="zap" size={14} /></span> Execution Order
                   </div>
                   <div style={{ color: "var(--text-dim)", lineHeight: 1.45, fontSize: 11 }}>
                     Runs <b>before</b> every request in this collection, preceding request-level pre-scripts.
@@ -516,7 +517,7 @@ export const CollectionModal: FC<Props> = ({
                   }}
                 >
                   <div style={{ fontWeight: 600, color: "#10b981", marginBottom: 4, display: "flex", alignItems: "center", gap: 5 }}>
-                    <span>🧪</span> Execution Order
+                    <span><PopIcon name="flask" size={14} /></span> Execution Order
                   </div>
                   <div style={{ color: "var(--text-dim)", lineHeight: 1.45, fontSize: 11 }}>
                     Runs <b>after</b> every response in this collection. Request tests run first, then collection tests.

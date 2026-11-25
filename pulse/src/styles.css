@@ -9630,3 +9630,65 @@ mark.resp-match-subtle {
 .theme-card-preview[data-theme="graphite"] {
   background: #171819 url("./graphite-interior.png") center / cover no-repeat;
 }
+
+/* ═════════ Looks shared with the Aether IDE (applied only when embedded) ═════════ */
+html[data-ide-synced] body, html[data-ide-synced] :is(button, input, select, textarea) { font-family: var(--font); }
+
+/* Frenky Orange: same warm wallpaper as the IDE */
+html[data-ide-theme="frenky-orange"] {
+  --theme-wallpaper: url("./warm-glass-background.png");
+  --wallpaper-tint: rgba(22, 17, 14, 0.42);
+}
+
+/* Apple Dark: liquid graphite glass over the warm wallpaper, Apple-style text (matches IDE Liquid Glass) */
+[data-theme="apple-dark"] {
+  color-scheme: dark;
+  --accent: #0a84ff;
+  --accent-2: #0071e3;
+  --accent-soft: rgba(10, 132, 255, 0.18);
+  --border-focus: var(--accent);
+  --accent-gradient: linear-gradient(135deg, #5ac8fa, #0a84ff 55%, #0062cc);
+  --font: -apple-system, BlinkMacSystemFont, "Inter Variable", "Segoe UI Variable", "Segoe UI", Roboto, sans-serif;
+  --bg: #1c1c1e;
+  --bg-1: rgba(44, 44, 46, 0.55);
+  --bg-2: rgba(44, 44, 46, 0.5);
+  --bg-3: rgba(58, 58, 60, 0.55);
+  --bg-4: rgba(72, 72, 74, 0.6);
+  --bg-hover: rgba(255, 255, 255, 0.08);
+  --bg-active: rgba(255, 255, 255, 0.12);
+  --border: rgba(255, 255, 255, 0.14);
+  --border-soft: rgba(255, 255, 255, 0.08);
+  --text: #f5f5f7;
+  --text-dim: #d1d1d6;
+  --text-mute: #a1a1a6;
+  --theme-wallpaper: url("./warm-glass-background.png");
+  --wallpaper-tint: rgba(10, 10, 12, 0.36);
+  --glass-surface: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02) 38%, rgba(255,255,255,0) 60%), rgba(40, 40, 44, 0.4);
+  --glass-popup: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02) 40%), rgba(36, 36, 40, 0.78);
+  --glass-shadow: 0 10px 40px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+  --glass-chart-track: rgba(255, 255, 255, 0.1);
+}
+[data-theme="apple-dark"] .app,
+.theme-card-preview[data-theme="apple-dark"],
+html[data-ide-theme="frenky-orange"] .app {
+  background: linear-gradient(var(--wallpaper-tint), var(--wallpaper-tint)), var(--bg) var(--theme-wallpaper) center / cover no-repeat;
+}
+[data-theme="apple-dark"] .dashboard-container { background: transparent; }
+[data-theme="apple-dark"] :is(.topbar, .sidebar, .app-footer, .right-sidebar-panel, .kpi-card, .dash-card, .dash-hero, .modal, .workspace) {
+  background: var(--glass-surface) !important;
+  border-color: var(--border) !important;
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(34px) saturate(1.9);
+  -webkit-backdrop-filter: blur(34px) saturate(1.9);
+}
+[data-theme="apple-dark"] :is(.kpi-card, .dash-card, .dash-hero, .modal) { border-radius: 18px; }
+[data-theme="apple-dark"] .modal { background: var(--glass-popup) !important; }
+[data-theme="apple-dark"] :is(input, select, textarea) { background-color: rgba(0, 0, 0, 0.25); border-color: rgba(255, 255, 255, 0.12); }
+[data-theme="apple-dark"] ::selection { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+/* Accent ink on filled accent buttons follows the IDE */
+html[data-ide-synced] :is(.btn-primary, .primary, .send-btn) { color: var(--accent-ink, #fff); }
+.pop-icon { flex: none; vertical-align: -0.18em; }
+:is(button, a, span, strong, div) > .pop-icon:first-child:not(:only-child) { margin-right: 6px; }
+/* When following the IDE, the IDE font is the default (a font picked in Settings still wins). */
+html[data-ide-synced] { --font: var(--ide-font, "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif); }

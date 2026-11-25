@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import PopIcon from "./components/PopIcon";
 import type {
   AppData,
   Collection,
@@ -13,7 +14,7 @@ import type {
   ThemeMode,
   TreeNode,
 } from "./types";
-import { emptySnapshot, METHOD_COLORS, requestToSnapshot, snapshotToRequest } from "./types";
+import { emptySnapshot, METHOD_COLORS, requestToSnapshot, snapshotToRequest, type IdeTheme, type PulseSettingsPatch } from "./types";
 import { kv, uid } from "./id";
 import {
   createSampleCollections,
@@ -59,6 +60,8 @@ import {
   type PanelLayoutMode,
   FONT_FAMILY_PRESETS,
   CODE_FONT_PRESETS,
+  UI_FONT_SIZE,
+  CODE_FONT_SIZE,
 } from "./components/SettingsModal";
 import { toCurl } from "./curl";
 
@@ -492,6 +495,140 @@ export default function App({ initialData }: { initialData: AppData }) {
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("pulse_theme", theme);
   }, [theme]);
+
+  // ── Embedded in the Aether IDE: shared look + one common Settings page ──
+  const embeddedInIde = Boolean(window.pulseDesktop?.isDesktop) || (typeof window !== "undefined" && window.parent !== window);
+  const [followIde, setFollowIde] = useState<boolean>(() => localStorage.getItem("pulse_follow_ide") !== "0");
+  const followIdeRef = useRef(followIde);
+  followIdeRef.current = followIde;
+  const lastIdeTheme = useRef<IdeTheme | null>(null);
+
+  const applyIdeLook = useCallback((ide: IdeTheme | null) => {
+    const root = document.documentElement;
+    const accentVars = ["--accent", "--accent-2", "--accent-soft", "--border-focus", "--accent-gradient", "--accent-ink"];
+    if (!ide || !followIdeRef.current) {
+      root.removeAttribute("data-ide-theme");
+      root.removeAttribute("data-ide-synced");
+      accentVars.forEach((name) => root.style.removeProperty(name));
+      root.style.removeProperty("--ide-font");
+      root.setAttribute("data-theme", theme);
+      return;
+    }
+    const safe = (v?: string) => (v && !/[;{}<>]/.test(v) ? v : "");
+    if (ide.ideTheme && /^[\w-]+$/.test(ide.ideTheme)) root.setAttribute("data-ide-theme", ide.ideTheme);
+    const look = THEME_PRESETS.find((preset) => preset.id === ide.pulseTheme)?.id;
+    if (look) root.setAttribute("data-theme", look);
+    const accent = safe(ide.accent);
+    if (accent) {
+      root.style.setProperty("--accent", accent);
+      root.style.setProperty("--accent-2", `color-mix(in srgb, ${accent} 82%, black)`);
+      root.style.setProperty("--accent-soft", `color-mix(in srgb, ${accent} 18%, transparent)`);
+      root.style.setProperty("--border-focus", accent);
+      root.style.setProperty("--accent-gradient", `linear-gradient(135deg, color-mix(in srgb, ${accent} 80%, white), ${accent} 55%, color-mix(in srgb, ${accent} 78%, black))`);
+    }
+    if (safe(ide.accentInk)) root.style.setProperty("--accent-ink", safe(ide.accentInk));
+    if (safe(ide.font)) root.style.setProperty("--ide-font", safe(ide.font));
+    root.setAttribute("data-ide-synced", "true");
+  }, [theme]);
+
+  // Re-apply whenever the follow switch or Pulse's own theme changes.
+  useEffect(() => {
+    applyIdeLook(lastIdeTheme.current);
+  }, [followIde, theme, applyIdeLook]);
+
+  useEffect(() => {
+    const receive = (ide: IdeTheme | null | undefined) => {
+      if (!ide || typeof ide !== "object") return;
+      lastIdeTheme.current = ide;
+      applyIdeLook(ide);
+    };
+    const offDesktop = window.pulseDesktop?.onTheme?.(receive);
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.source !== window.parent) return;
+      if (event.data?.type === "ather:theme") receive(event.data.theme as IdeTheme);
+    };
+    window.addEventListener("message", onMessage);
+    return () => {
+      offDesktop?.();
+      window.removeEventListener("message", onMessage);
+    };
+  }, [applyIdeLook]);
+
+  // Publish Pulse settings to the IDE's common Settings page ("Studio & Dashboard").
+  const publishSettings = useCallback(() => {
+    if (!embeddedInIde) return;
+    const stored = Number(localStorage.getItem("pulse_request_timeout") || 0);
+    const state = {
+      theme,
+      followIde,
+      panelLayout,
+      fontSettings,
+      requestTimeout: Number.isFinite(stored) ? Math.max(0, stored) : 0,
+      themes: THEME_PRESETS.map(({ id, name, badge, accent, bg, cardBg }) => ({ id, name, badge, accent, bg, cardBg })),
+      fonts: FONT_FAMILY_PRESETS.map(({ id, name, value }) => ({ id, name, value })),
+      codeFonts: CODE_FONT_PRESETS.map(({ id, name, value }) => ({ id, name, value })),
+      limits: { ui: UI_FONT_SIZE, code: CODE_FONT_SIZE },
+    };
+    window.pulseDesktop?.sendSettings?.(state);
+    if (window.parent !== window) window.parent.postMessage({ type: "pulse:settings-state", state }, window.location.origin);
+  }, [embeddedInIde, theme, followIde, panelLayout, fontSettings]);
+  useEffect(() => {
+    publishSettings();
+  }, [publishSettings]);
+
+  const settingsHandlers = useRef({ handleUpdatePanelLayout, handleResetPanelSizes, publishSettings });
+  settingsHandlers.current = { handleUpdatePanelLayout, handleResetPanelSizes, publishSettings };
+  useEffect(() => {
+    if (!embeddedInIde) return;
+    const onUpdate = (patch: PulseSettingsPatch) => {
+      if (!patch || typeof patch !== "object") return;
+      const h = settingsHandlers.current;
+      if (patch.theme && THEME_PRESETS.some((preset) => preset.id === patch.theme)) {
+        setTheme(patch.theme);
+        localStorage.setItem("pulse_theme", patch.theme);
+      }
+      if (typeof patch.followIde === "boolean") {
+        setFollowIde(patch.followIde);
+        localStorage.setItem("pulse_follow_ide", patch.followIde ? "1" : "0");
+      }
+      if (patch.panelLayout === "response-bottom" || patch.panelLayout === "response-right") h.handleUpdatePanelLayout(patch.panelLayout);
+      if (patch.fontSettings && typeof patch.fontSettings === "object") {
+        const f = patch.fontSettings;
+        setFontSettings((prev) => ({
+          fontSize: typeof f.fontSize === "number" ? Math.max(UI_FONT_SIZE.min, Math.min(UI_FONT_SIZE.max, f.fontSize)) : prev.fontSize,
+          codeFontSize: typeof f.codeFontSize === "number" ? Math.max(CODE_FONT_SIZE.min, Math.min(CODE_FONT_SIZE.max, f.codeFontSize)) : prev.codeFontSize,
+          fontFamily: f.fontFamily && FONT_FAMILY_PRESETS.some((preset) => preset.value === f.fontFamily) ? f.fontFamily : prev.fontFamily,
+          codeFontFamily: f.codeFontFamily && CODE_FONT_PRESETS.some((preset) => preset.value === f.codeFontFamily) ? f.codeFontFamily : prev.codeFontFamily,
+        }));
+      }
+      if (typeof patch.requestTimeout === "number" && Number.isFinite(patch.requestTimeout)) {
+        localStorage.setItem("pulse_request_timeout", String(Math.max(0, patch.requestTimeout)));
+        h.publishSettings();
+      }
+      if (patch.action === "resetPanelSizes") h.handleResetPanelSizes();
+      if (patch.action === "requestState") h.publishSettings();
+    };
+    const off = window.pulseDesktop?.onSettingsUpdate?.(onUpdate);
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.source !== window.parent) return;
+      if (event.data?.type === "ather:pulse-settings-update") onUpdate(event.data.patch as PulseSettingsPatch);
+    };
+    window.addEventListener("message", onMessage);
+    return () => {
+      off?.();
+      window.removeEventListener("message", onMessage);
+    };
+  }, [embeddedInIde]);
+
+  // One common Settings page: when embedded, the gear opens the IDE's Settings at "Studio & Dashboard".
+  const openSettings = () => {
+    if (embeddedInIde) {
+      if (window.pulseDesktop?.openSettings) window.pulseDesktop.openSettings();
+      else window.parent.postMessage({ type: "pulse:open-settings" }, window.location.origin);
+      return;
+    }
+    setSettingsOpen(true);
+  };
 
   useEffect(() => {
     document.documentElement.style.setProperty("--app-font-size", `${fontSettings.fontSize}px`);
@@ -1316,7 +1453,7 @@ export default function App({ initialData }: { initialData: AppData }) {
     <div className="snippet-container">
       <div className="snippet-head">
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 13 }}>📜</span>
+          <span style={{ fontSize: 13 }}><PopIcon name="history" size={14} /></span>
           <span>Code snippet</span>
           {isDrawer && (
             <span
@@ -1346,7 +1483,7 @@ export default function App({ initialData }: { initialData: AppData }) {
           style={{ padding: "2px 6px" }}
           aria-label="Close code snippet panel"
         >
-          ✕
+          <PopIcon name="close" size={14} />
         </button>
       </div>
       <pre className="snippet-body">{snippet}</pre>
@@ -1458,7 +1595,7 @@ export default function App({ initialData }: { initialData: AppData }) {
             ))}
             <option disabled>──────────</option>
             <option value="__NEW_ENV__">+ Add New Environment...</option>
-            <option value="__MANAGE_ENV__">⚙ Manage Environments...</option>
+            <option value="__MANAGE_ENV__"><PopIcon name="settings" size={14} /> Manage Environments...</option>
           </select>
           <button
             className="top-env-add-btn"
@@ -1502,7 +1639,7 @@ export default function App({ initialData }: { initialData: AppData }) {
                 onClick={() => deleteEnvironment(activeEnv.id)}
                 aria-label={`Delete ${activeEnv.name}`}
               >
-                ✕
+                <PopIcon name="close" size={14} />
               </button>
             </>
           )}
@@ -1602,8 +1739,16 @@ export default function App({ initialData }: { initialData: AppData }) {
             className="top-theme-quick-btn"
             title={`Current theme: ${THEME_PRESETS.find((preset) => preset.id === theme)?.name}. Click to cycle themes, or customize in Settings.`}
             onClick={() => {
-              const index = THEME_PRESETS.findIndex((preset) => preset.id === theme);
-              setTheme(THEME_PRESETS[(index + 1) % THEME_PRESETS.length].id);
+              // Cycle from the theme currently on screen; choosing one here stops matching the IDE look.
+              const shown = followIde ? document.documentElement.getAttribute("data-theme") : theme;
+              const index = THEME_PRESETS.findIndex((preset) => preset.id === shown);
+              const next = THEME_PRESETS[(index + 1) % THEME_PRESETS.length].id;
+              if (followIde) {
+                setFollowIde(false);
+                localStorage.setItem("pulse_follow_ide", "0");
+              }
+              setTheme(next);
+              localStorage.setItem("pulse_theme", next);
             }}
             aria-label="Quick Toggle Theme"
           >
@@ -1612,7 +1757,7 @@ export default function App({ initialData }: { initialData: AppData }) {
                 <circle cx="12" cy="12" r="4" />
                 <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
               </svg>
-            ) : theme === "dark" || theme === "graphite" || theme === "glass" ? (
+            ) : theme === "dark" || theme === "graphite" || theme === "glass" || theme === "apple-dark" ? (
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
               </svg>
@@ -1629,7 +1774,7 @@ export default function App({ initialData }: { initialData: AppData }) {
           {/* Settings Button: Preferences, Themes, Typography & Layout */}
           <button
             className="top-settings-btn"
-            onClick={() => setSettingsOpen(true)}
+            onClick={openSettings}
             title="Preferences & Settings (Themes, Fonts, Workspace Layout)"
             aria-label="Preferences & Settings"
           >
@@ -1876,7 +2021,7 @@ export default function App({ initialData }: { initialData: AppData }) {
                         }
                       }}
                     >
-                      ✕
+                      <PopIcon name="close" size={14} />
                     </span>
                   </button>
                 ))}
@@ -1897,7 +2042,7 @@ export default function App({ initialData }: { initialData: AppData }) {
                     title={`Close all other tabs except active tab (${tabs.length - 1} ${tabs.length - 1 === 1 ? "tab" : "tabs"})`}
                     onClick={() => closeOtherTabs(activeTabId)}
                   >
-                    <span className="tab-close-others-icon">✕</span>
+                    <span className="tab-close-others-icon"><PopIcon name="close" size={14} /></span>
                     <span>Close Others</span>
                     <span className="tab-close-others-count">({tabs.length - 1})</span>
                   </button>

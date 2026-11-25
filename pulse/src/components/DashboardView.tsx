@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import PopIcon from "./PopIcon";
 import type { Collection, Environment, HistoryEntry, RequestItem } from "../types";
 import { METHOD_COLORS } from "../types";
 import { collectRequests, getProxyBaseUrl } from "../request";
@@ -350,7 +351,7 @@ export function DashboardView({
             <span className="live-pulse" />
             <span>API ENGINE ONLINE · 127.0.0.1:3001</span>
             {proxyPing && proxyPing.ok && (
-              <span className="dash-ping-pill">⚡ {proxyPing.time}ms latency</span>
+              <span className="dash-ping-pill"><PopIcon name="zap" size={14} /> {proxyPing.time}ms latency</span>
             )}
           </div>
           <h1 className="dash-title">API Operations & Test Dashboard</h1>
@@ -365,7 +366,7 @@ export function DashboardView({
             onClick={onImportClick}
             title="Import Postman Collections (.json), README.md, or API documentation (.doc, .docx, .txt)"
           >
-            <span aria-hidden="true">📁</span>
+            <span aria-hidden="true"><PopIcon name="folder" size={14} /></span>
             <span>Import JSON / Doc</span>
           </button>
           <button className="btn ghost dash-action-btn" onClick={() => onNewRequest()}>
@@ -378,12 +379,12 @@ export function DashboardView({
               onClick={onLoadSamples}
               title="Load pre-configured sample test collections & environments"
             >
-              <span aria-hidden="true">🧪</span>
+              <span aria-hidden="true"><PopIcon name="flask" size={14} /></span>
               <span>Sample Test Suite</span>
             </button>
           )}
           <button className="btn dash-action-btn" onClick={onSwitchToStudio}>
-            <span aria-hidden="true">⚡</span>
+            <span aria-hidden="true"><PopIcon name="zap" size={14} /></span>
             <span>Request Studio</span>
           </button>
           <button
@@ -517,7 +518,7 @@ export function DashboardView({
                     title="Load pre-configured sample test collections and environments"
                     style={{ display: "flex", alignItems: "center", gap: 4 }}
                   >
-                    <span>🧪</span> Samples
+                    <span><PopIcon name="flask" size={14} /></span> Samples
                   </button>
                 )}
                 <button
@@ -526,7 +527,7 @@ export function DashboardView({
                   title="Import from JSON, README.md, or doc file"
                   style={{ display: "flex", alignItems: "center", gap: 4 }}
                 >
-                  <span>📁</span> Import Docs / JSON
+                  <span><PopIcon name="folder" size={14} /></span> Import Docs / JSON
                 </button>
                 <button className="btn sm ghost" onClick={() => onNewRequest()}>
                   + New Request
@@ -540,7 +541,7 @@ export function DashboardView({
                   <p>No collections found in workspace.</p>
                   {onLoadSamples && (
                     <button className="btn primary sm" onClick={onLoadSamples} style={{ marginTop: 8 }}>
-                      🧪 Load Sample Test Suite & Environments
+                      <PopIcon name="flask" size={14} /> Load Sample Test Suite & Environments
                     </button>
                   )}
                 </div>
@@ -551,7 +552,7 @@ export function DashboardView({
                     <div key={col.id} className="collection-card">
                       <div className="col-card-head">
                         <div className="col-card-info">
-                          <span className="col-folder-badge">📁</span>
+                          <span className="col-folder-badge"><PopIcon name="folder" size={14} /></span>
                           <div>
                             <div className="col-card-name">{col.name}</div>
                             <div className="col-card-desc">
@@ -566,7 +567,7 @@ export function DashboardView({
                             style={{ fontWeight: 700 }}
                             onClick={() => onRunCollection(col)}
                           >
-                            ▶ Run Suite ({reqs.length})
+                            <PopIcon name="play" size={14} /> Run Suite ({reqs.length})
                           </button>
                         </div>
                       </div>

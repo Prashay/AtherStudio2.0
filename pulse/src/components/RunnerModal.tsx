@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import PopIcon from "./PopIcon";
 import type { Collection, Environment, ProxyResponse, RequestItem, RunResult } from "../types";
 import { METHOD_COLORS } from "../types";
 import { collectRequests, formatBytes, interpolate, prettyBody, sendRequest } from "../request";
@@ -146,7 +147,7 @@ export function RunnerModal({
             </div>
           </div>
           <button className="icon-btn" onClick={onClose} style={{ fontSize: 16 }}>
-            ✕
+            <PopIcon name="close" size={14} />
           </button>
         </div>
 
@@ -206,7 +207,7 @@ export function RunnerModal({
                   runController.current?.abort();
                 }}
               >
-                ⏹ Stop Run
+                <PopIcon name="stop" size={14} /> Stop Run
               </button>
             ) : (
               <button
@@ -215,7 +216,7 @@ export function RunnerModal({
                 onClick={run}
                 disabled={requests.length === 0}
               >
-                ▶ Run {requests.length} Request{requests.length === 1 ? "" : "s"}
+                <PopIcon name="play" size={14} /> Run {requests.length} Request{requests.length === 1 ? "" : "s"}
               </button>
             )}
           </div>
@@ -457,7 +458,7 @@ export function RunnerModal({
                 </span>
               </div>
               <button className="icon-btn" onClick={() => setSelectedResult(null)}>
-                ✕
+                <PopIcon name="close" size={14} />
               </button>
             </div>
 

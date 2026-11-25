@@ -15,6 +15,18 @@ contextBridge.exposeInMainWorld("pulseDesktop", {
     ipcRenderer.send("pulse:ready");
     return () => ipcRenderer.removeListener("pulse:select-view", listener);
   },
+  sendSettings: (state) => ipcRenderer.send("pulse:settings-state", state),
+  onSettingsUpdate: (callback) => {
+    const listener = (_event, patch) => callback(patch);
+    ipcRenderer.on("pulse:settings-update", listener);
+    return () => ipcRenderer.removeListener("pulse:settings-update", listener);
+  },
+  openSettings: () => ipcRenderer.send("pulse:open-settings"),
+  onTheme: (callback) => {
+    const listener = (_event, theme) => callback(theme);
+    ipcRenderer.on("pulse:theme", listener);
+    return () => ipcRenderer.removeListener("pulse:theme", listener);
+  },
   platform: process.platform,
   readWorkspace: () => workspaceRequest("pulse:read-workspace"),
   writeWorkspace: (data) => workspaceRequest("pulse:write-workspace", data),

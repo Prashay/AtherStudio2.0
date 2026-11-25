@@ -1,11 +1,11 @@
 import TreeIcon, { fileIconName } from './TreeIcon.jsx'
+import PopIcon, { menuIconFor } from './PopupIcons.jsx'
 import { fileOutline } from './fileOutline.js'
 import MavenPanel, { MavenLifecycle } from './MavenPanel.jsx'
 import VcsLogPanel, { VcsCommitPanel, VcsBranchWidget } from './VcsPanel.jsx'
 import TerminalPanel from './TerminalPanel.jsx'
 import SearchEverywhere from './SearchEverywhere.jsx'
 import CodeEditor from './CodeEditor.jsx'
-import NewProjectDialog from './NewProjectDialog.jsx'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { QRCodeSVG, downloadQRCodePNG } from './qrcode.jsx'
@@ -34,6 +34,12 @@ const iconPaths = {
   robot: 'M5 8h14a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z M12 8V4m-2 0h4M8 13h.01m8 0h.01m-7 4h6',
   key: 'M14 10a5 5 0 1 0-3 3L4 20h4v-3h3l3-3m3-7h.01',
   token: 'M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0z M12 7v10m2-8h-3a1.5 1.5 0 0 0 0 3h2a1.5 1.5 0 0 1 0 3h-3'
+}
+
+const LEGACY_ICON = { reload: 'refresh', debug: 'bug', execute: 'terminal' }
+function MenuGlyph({ label, icon }) {
+  const name = menuIconFor(label) || LEGACY_ICON[icon] || icon
+  return <span className="menu-glyph" aria-hidden="true">{name ? <PopIcon name={name} size={14} /> : null}</span>
 }
 
 function WorkbenchIcon({ name }) {
@@ -487,7 +493,7 @@ function TreeNode({ node, depth, active, onOpen, openDirs, toggleDir, loadDirect
       >
         <span aria-hidden="true" className={`project-tree-chevron ${isDir ? '' : 'placeholder'} ${open ? 'expanded' : ''}`} />
         <span className={`project-tree-icon ${icon}`}><TreeIcon name={icon} /></span>
-        <span title={displayNode.path} style={{ color: hasError ? '#ff7b72' : hasErrorInside ? '#d29922' : undefined, textDecoration: hasError ? 'underline wavy #f85149 1px' : undefined }}>{label}{hasError ? ' ⚠️' : ''}</span>
+        <span title={displayNode.path} style={{ color: hasError ? '#ff7b72' : hasErrorInside ? '#d29922' : undefined, textDecoration: hasError ? 'underline wavy #f85149 1px' : undefined }}>{label}{hasError ? <> <PopIcon name="alert" size={14} /></> : ''}</span>
       </button>
       {needsLoad && loadDirectory && <div className="hint" style={{ paddingLeft: 21 + depth * 14 }} role="status">
         {loadError ? 'Could not load folder. Collapse and reopen to retry.' : 'Loading folder…'}
@@ -639,6 +645,8 @@ export default function App() {
   }, [tabPopup])
   const [pendingDelete, setPendingDelete] = useState(null)
   const deleteDialog = useRef(null)
+  const newProjectDialog = useRef(null)
+  const [newProjectForm, setNewProjectForm] = useState(null)
   const [projectViewPosition, setProjectViewPosition] = useState(null)
   const projectViewButton = useRef(null)
   const [compactPackages, setCompactPackages] = useState(true)
@@ -697,7 +705,6 @@ export default function App() {
   const filesInputRef = useRef(null)
   const [importNotice, setImportNotice] = useState('')
   const [folderOpen, setFolderOpen] = useState(false)
-  const [newProjectOpen, setNewProjectOpen] = useState(false)
   const [browse, setBrowse] = useState(null)
   const [browseErr, setBrowseErr] = useState('')
   const [folderPath, setFolderPath] = useState('')
@@ -804,6 +811,8 @@ export default function App() {
   const [speakingIdx, setSpeakingIdx] = useState(null)
   const [settings, setSettings] = useState(() => loadSettings())
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsTab, setSettingsTab] = useState(null)
+  const [pulseSettings, setPulseSettings] = useState(null)
   const [mdMode, setMdMode] = useState(() => {
     const s = loadSettings()
     return s.mdDefaultMode || 'reader'
@@ -927,6 +936,71 @@ export default function App() {
     document.documentElement.setAttribute('data-workbench-theme', settings.workbenchTheme || 'frenky-orange')
   }, [settings.theme, settings.workbenchTheme])
 
+  // Share the IDE theme (accent, fonts, wallpaper) with Pulse Studio / Dashboard.
+  const sendPulseTheme = useCallback(() => {
+    const ide = settings.workbenchTheme || 'frenky-orange'
+    const PULSE_MAP = { 'frenky-orange': 'glass', glass: 'glass', graphite: 'graphite', blue: 'blue', dark: 'dark', light: 'light', pearl: 'pearl', liquid: 'apple-dark' }
+    const root = getComputedStyle(document.documentElement)
+    const appEl = document.querySelector('.app')
+    const app = appEl ? getComputedStyle(appEl) : root
+    const payload = {
+      pulseTheme: PULSE_MAP[ide] || 'dark',
+      ideTheme: ide,
+      accent: root.getPropertyValue('--ui-accent').trim() || '#ff7624',
+      accentInk: root.getPropertyValue('--ui-accent-ink').trim() || '#21130d',
+      font: app.getPropertyValue('--sans').trim() || app.fontFamily,
+      mono: settings.editorFontFamily || root.getPropertyValue('--ui-mono').trim()
+    }
+    pulseBridge?.setTheme?.(payload)
+    try { pulseFrameRef.current?.contentWindow?.postMessage({ type: 'ather:theme', theme: payload }, window.location.origin) } catch {}
+  }, [settings.workbenchTheme, settings.editorFontFamily, pulseBridge])
+  useEffect(() => {
+    const frame = requestAnimationFrame(sendPulseTheme)
+    return () => cancelAnimationFrame(frame)
+  }, [sendPulseTheme, settings.theme])
+
+  // One common Settings page: Studio & Dashboard (Pulse) settings live in the IDE Settings.
+  const updatePulseSettings = useCallback((patch) => {
+    if (!patch || typeof patch !== 'object') return
+    setPulseSettings((prev) => {
+      if (!prev) return prev
+      const next = { ...prev }
+      for (const key of ['theme', 'followIde', 'panelLayout', 'requestTimeout']) if (key in patch) next[key] = patch[key]
+      if (patch.fontSettings) next.fontSettings = { ...prev.fontSettings, ...patch.fontSettings }
+      return next
+    })
+    if (pulseBridge?.updateSettings) pulseBridge.updateSettings(patch)
+    else {
+      try { pulseFrameRef.current?.contentWindow?.postMessage({ type: 'ather:pulse-settings-update', patch }, window.location.origin) } catch {}
+    }
+  }, [pulseBridge])
+
+  useEffect(() => {
+    const openStudioSettings = () => { setSettingsTab('studio'); setSettingsOpen(true) }
+    const cleanups = []
+    if (pulseBridge?.onSettingsState) {
+      pulseBridge.getSettings?.().then((state) => { if (state) setPulseSettings(state) }).catch(() => {})
+      cleanups.push(pulseBridge.onSettingsState((state) => setPulseSettings(state)))
+      if (pulseBridge.onOpenSettings) cleanups.push(pulseBridge.onOpenSettings(openStudioSettings))
+    }
+    const onMessage = (event) => {
+      if (event.origin !== window.location.origin || event.source !== pulseFrameRef.current?.contentWindow) return
+      if (event.data?.type === 'pulse:settings-state' && event.data.state && typeof event.data.state === 'object') setPulseSettings(event.data.state)
+      if (event.data?.type === 'pulse:open-settings') openStudioSettings()
+    }
+    window.addEventListener('message', onMessage)
+    return () => {
+      cleanups.forEach((off) => { try { off?.() } catch {} })
+      window.removeEventListener('message', onMessage)
+    }
+  }, [pulseBridge])
+
+  // Keep the Settings page above the Pulse view while it is open.
+  useEffect(() => {
+    pulseBridge?.setOverlay?.(settingsOpen)
+    if (settingsOpen) updatePulseSettings({ action: 'requestState' })
+  }, [settingsOpen, pulseBridge, updatePulseSettings])
+
   const exportErrorLog = (errorText, index, format = 'markdown') => {
     const lastUserPrompt = [...messages.slice(0, index + 1)].reverse().find((m) => m.role === 'user')?.text || ''
     const timestamp = new Date().toISOString()
@@ -961,15 +1035,15 @@ export default function App() {
 
 ---
 
-## ⚠️ Error Details
+## <PopIcon name="alert" size={14} /> Error Details
 \`\`\`
 ${errorText}
 \`\`\`
 
-## 💬 Context Prompt
+## <PopIcon name="chat" size={14} /> Context Prompt
 ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
 
-## 🛠️ Diagnostic Environment
+## <PopIcon name="hammer" size={14} /> Diagnostic Environment
 - App Version: Aether Studio v1.0.0
 - Web FS Active: ${Boolean(webDirHandle)}
 - User Agent: ${navigator.userAgent}
@@ -1882,18 +1956,6 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     void loadBrowse(root)
   }
 
-  const openNewProject = () => {
-    if (webPulse) return
-    setMenuOpen(false)
-    setActiveMenu(null)
-    setNewProjectOpen(true)
-  }
-
-  const handleProjectCreated = async (projectPath) => {
-    setNewProjectOpen(false)
-    await selectFolder(projectPath)
-  }
-
   const selectFolder = async (requested = folderPath) => {
     if (webPulse) return openLocalFolder()
     const path = requested.trim()
@@ -1931,6 +1993,86 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       setOpeningFolder(false)
     }
   }
+
+  const createNewProject = async () => {
+    if (webPulse) {
+      setImportNotice('Creating a new project needs the desktop app or the local server.')
+      return
+    }
+    if (openingFolder || !canLeaveWorkspace()) return
+    const home = await fetch('/api/workspace').then((r) => r.json()).then((d) => d.home || '').catch(() => '')
+    const sep = home.includes('\\') ? '\\' : '/'
+    setNewProjectForm({ name: 'MyJavaApp', parent: home ? home.replace(/[\\/]+$/, '') + sep + 'AetherProjects' : '', error: '', busy: false })
+  }
+
+  const browseNewProjectLocation = async () => {
+    if (!window.electronAPI?.chooseFolder) return
+    try {
+      const res = await window.electronAPI.chooseFolder({ title: 'Choose Location for New Project', defaultPath: newProjectForm?.parent || undefined })
+      const picked = !res?.canceled && res?.filePaths?.[0]
+      if (picked) setNewProjectForm((form) => form && { ...form, parent: picked, error: '' })
+    } catch {}
+  }
+
+  const addNewProjectSubfolder = async () => {
+    const form = newProjectForm
+    if (!form?.parent.trim()) return
+    const ask = window.electronAPI?.prompt
+      ? window.electronAPI.prompt({ title: 'New Folder', message: 'Folder name:', defaultValue: '' })
+      : Promise.resolve(window.prompt('Folder name'))
+    const folder = String((await ask) || '').trim()
+    if (!folder) return
+    if (/[<>:"/\\|?*]/.test(folder) || /[. ]$/.test(folder)) {
+      setNewProjectForm((current) => current && { ...current, error: 'Enter a folder name without path separators.' })
+      return
+    }
+    const sep = form.parent.includes('\\') ? '\\' : '/'
+    setNewProjectForm((current) => current && { ...current, parent: current.parent.trim().replace(/[\\/]+$/, '') + sep + folder, error: '' })
+  }
+
+  const submitNewProject = async () => {
+    const form = newProjectForm
+    if (!form || form.busy) return
+    const name = form.name.trim()
+    const parent = form.parent.trim()
+    if (!name) return setNewProjectForm({ ...form, error: 'Enter a project name.' })
+    if (!parent) return setNewProjectForm({ ...form, error: 'Choose where to create the project.' })
+    setNewProjectForm({ ...form, busy: true, error: '' })
+    setOpeningFolder(true)
+    try {
+      const res = await fetch('/api/project/new', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent, name, template: form.template === 'empty' ? 'empty' : 'maven' })
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const message = res.status === 404
+          ? 'The workspace server is out of date. Restart Arther Studio and try again.'
+          : data.error || 'Could not create the project.'
+        setNewProjectForm((current) => current && { ...current, busy: false, error: message })
+        return
+      }
+      setNewProjectForm(null)
+      openProject({ project: { name: data.name, root: data.root }, tree: data.tree })
+      const next = [{ name: data.name, root: data.root }, ...recentProjects.filter((item) => item.root !== data.root)].slice(0, 8)
+      setRecentProjects(next)
+      try { localStorage.setItem('aether.recentProjects', JSON.stringify(next)) } catch {}
+      setImportNotice('')
+      if (data.mainFile) {
+        const parts = data.mainFile.split('/').slice(0, -1)
+        setOpenDirs(new Set(['', ...parts.map((_, index) => parts.slice(0, index + 1).join('/'))]))
+        await openFile(data.mainFile)
+      }
+    } catch {
+      setNewProjectForm((current) => current && { ...current, busy: false, error: 'The workspace server could not create the project.' })
+    } finally {
+      setOpeningFolder(false)
+    }
+  }
+
+  const createNewProjectRef = useRef(createNewProject)
+  createNewProjectRef.current = createNewProject
 
   const premiumToken = (model) => {
     if (!model || model.tier !== 'premium') return ''
@@ -2477,13 +2619,13 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     }
   }
   const newItems = (directory, fromFileMenu = false) => [
-    ...(fromFileMenu ? [['Project…', webPulse ? null : openNewProject], ['Project from Existing Sources…', openFolderPicker]] : []),
+    ...(fromFileMenu ? [['Project…', createNewProject], ['Project from Existing Sources…', openFolderPicker]] : []),
     ['File…', canCreateInProject ? () => createProjectItem('File', directory) : null],
-    ['Directory…', canCreateInProject ? () => createProjectItem('Directory', directory) : null],
+    ['Directory…', canCreateInProject ? () => createProjectItem('Directory', directory) : createNewProject],
     ['Java Class…', canCreateInProject ? () => createProjectItem('Java Class', directory, '.java', (name, folder) => {
       const pkg = /(?:^|\/)src\/(?:main|test)\/java\/(.+)$/.exec(folder)?.[1]?.replaceAll('/', '.')
       return (pkg ? `package ${pkg};\n\n` : '') + `public class ${name.slice(0, -5)} {\n}\n`
-    }) : null],
+    }) : createNewProject],
     ['HTML File…', canCreateInProject ? () => createProjectItem('HTML File', directory, '.html', () => '<!doctype html>\n<html lang="en">\n<head><title>New page</title></head>\n<body></body>\n</html>\n') : null],
     ['Kotlin Class/File…', canCreateInProject ? () => createProjectItem('Kotlin File', directory, '.kt') : null],
     ['HTTP Request…', canCreateInProject ? () => createProjectItem('HTTP Request', directory, '.http') : null],
@@ -2503,11 +2645,12 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             const pkg = /(?:^|\/)src\/(?:main|test)\/java\/(.+)$/.exec(folder)?.[1]?.replaceAll('/', '.')
             return (pkg ? `package ${pkg};\n\n` : '') + `public class ${name.slice(0, -5)} {\n}\n`
           })
-        }
+        } else createNewProjectRef.current()
       } else if (action === 'new-directory') {
         if (canCreateInProject) createProjectItem('Directory', '')
+        else createNewProjectRef.current()
       } else if (action === 'new-project') {
-        openNewProject()
+        createNewProjectRef.current()
       } else if (action === 'open-folder') {
         openFolderPicker()
       } else if (action === 'save') {
@@ -2592,7 +2735,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
     }
   }, [projectMenu])
   const renderNewMenu = (directory, context = false) => <div className="ide-new-menu">
-    <button type="button" aria-expanded={newMenuOpen} onClick={() => setNewMenuOpen(!newMenuOpen)}>New <span aria-hidden="true">›</span></button>
+    <button type="button" aria-expanded={newMenuOpen} onClick={() => setNewMenuOpen(!newMenuOpen)}><MenuGlyph icon="plus" />New <PopIcon name="chevronRight" size={13} className="menu-chevron" /></button>
     {newMenuOpen && <div className="ide-new-items">
       {newItems(directory, !context).map(([label, action]) => <button type="button" key={label} disabled={!action} onClick={() => {
         setProjectMenu(null)
@@ -2600,7 +2743,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         setActiveMenu(null)
         setNewMenuOpen(false)
         action()
-      }}>{label}</button>)}
+      }}><MenuGlyph label={label} />{label}</button>)}
     </div>}
   </div>
   const contextNode = projectMenu?.node
@@ -2657,7 +2800,8 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
   }
   useEffect(() => {
     if (pendingDelete && !deleteDialog.current?.open) deleteDialog.current?.showModal()
-  }, [pendingDelete])
+    if (newProjectForm && !newProjectDialog.current?.open) newProjectDialog.current?.showModal()
+  }, [pendingDelete, newProjectForm])
   const deleteProjectFile = async ({ path, type = 'file', workspace: openedWorkspace }) => {
     setPendingDelete(null)
     if (workspaceRef.current !== openedWorkspace) return
@@ -2936,10 +3080,10 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
 
   const menus = {
     File: [
-      ['New Project…', webPulse ? null : openNewProject],
+      ['New Project…', createNewProject],
       ['New File…', canCreateInProject ? () => createProjectItem('File', '') : () => createNewFile()],
-      ['New Java Class…', canCreateInProject ? () => createProjectItem('Java Class', '', '.java', (name) => `public class ${name.slice(0, -5)} {\n}\n`) : null],
-      ['New Directory…', canCreateInProject ? () => createProjectItem('Directory', '') : null],
+      ['New Java Class…', canCreateInProject ? () => createProjectItem('Java Class', '', '.java', (name) => `public class ${name.slice(0, -5)} {\n}\n`) : createNewProject],
+      ['New Directory…', canCreateInProject ? () => createProjectItem('Directory', '') : createNewProject],
       ['Open Project…', openFolderPicker],
       ['Browse Server Workspace…', openFolderPicker],
       ['Save', current ? saveFile : null],
@@ -2972,6 +3116,93 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       className={`app intellij-workbench mode-${mode} ${(mavenOpen || vcsOpen || terminalOpen) && mode !== 'chat' ? 'has-maven-panel' : ''} ${isResizing === 'bottom' ? 'resizing-bottom' : ''}`}
       style={{ '--bottom-h': `${bottomHeight}px` }}
     >
+      {newProjectForm && createPortal(
+        <dialog ref={newProjectDialog} className="pop new-project-dialog" aria-labelledby="new-project-title"
+          onCancel={(event) => { event.preventDefault(); if (!newProjectForm.busy) setNewProjectForm(null) }}>
+          <form onSubmit={(event) => { event.preventDefault(); void submitNewProject() }}>
+            <header className="pop-head">
+              <span className="pop-badge"><PopIcon name="project" size={20} /></span>
+              <div className="pop-titles">
+                <strong id="new-project-title">New Project</strong>
+                <small>Set up a fresh Java workspace</small>
+              </div>
+              <button type="button" className="pop-close" aria-label="Close" disabled={newProjectForm.busy} onClick={() => setNewProjectForm(null)}>
+                <PopIcon name="close" size={16} />
+              </button>
+            </header>
+            <div className="pop-body">
+              <div className="pop-choices" role="radiogroup" aria-label="Project type">
+                {[
+                  { id: 'maven', icon: 'maven', title: 'Maven', note: 'pom.xml · Java 17' },
+                  { id: 'empty', icon: 'folder', title: 'Empty', note: 'Blank folder' }
+                ].map((option) => (
+                  <button key={option.id} type="button" role="radio" aria-checked={(newProjectForm.template || 'maven') === option.id}
+                    className="pop-choice" disabled={newProjectForm.busy}
+                    onClick={() => setNewProjectForm({ ...newProjectForm, template: option.id, error: '' })}>
+                    <span className="pop-choice-icon"><PopIcon name={option.icon} size={18} /></span>
+                    <span><strong>{option.title}</strong><small>{option.note}</small></span>
+                    <span className="pop-choice-check"><PopIcon name="check" size={12} strokeWidth={2.6} /></span>
+                  </button>
+                ))}
+              </div>
+              <label className="pop-field">
+                <span className="pop-label">Name</span>
+                <span className="pop-input">
+                  <PopIcon name="tag" size={15} />
+                  <input autoFocus value={newProjectForm.name} disabled={newProjectForm.busy} spellCheck={false} placeholder="MyJavaApp"
+                    onChange={(event) => setNewProjectForm({ ...newProjectForm, name: event.target.value, error: '' })} />
+                </span>
+              </label>
+              <div className="pop-field">
+                <span className="pop-label">Location</span>
+                <span className="pop-row">
+                  {window.electronAPI?.chooseFolder ? (
+                    <button type="button" className="pop-input pop-picker" disabled={newProjectForm.busy}
+                      title={newProjectForm.parent ? `${newProjectForm.parent} — click to change` : 'Click to choose a folder'}
+                      onClick={() => void browseNewProjectLocation()}>
+                      <PopIcon name="folderOpen" size={15} />
+                      <span className="pop-picker-text">{newProjectForm.parent || 'Click to select a location…'}</span>
+                      <span className="pop-picker-hint">Change</span>
+                    </button>
+                  ) : (
+                    <span className="pop-input">
+                      <PopIcon name="folderOpen" size={15} />
+                      <input value={newProjectForm.parent} disabled={newProjectForm.busy} spellCheck={false}
+                        onChange={(event) => setNewProjectForm({ ...newProjectForm, parent: event.target.value, error: '' })} />
+                    </span>
+                  )}
+                  <button type="button" className="pop-icon-btn" disabled={newProjectForm.busy || !newProjectForm.parent.trim()}
+                    title="New folder inside this location" aria-label="New folder inside this location"
+                    onClick={() => void addNewProjectSubfolder()}>
+                    <PopIcon name="folderPlus" size={16} />
+                  </button>
+                </span>
+              </div>
+              <div className="pop-preview" aria-label="Files that will be created">
+                <div className="pop-preview-root" title={[newProjectForm.parent.trim().replace(/[\\/]+$/, ''), newProjectForm.name.trim()].filter(Boolean).join(newProjectForm.parent.includes('\\') ? '\\' : '/')}>
+                  <PopIcon name="folder" size={14} />
+                  <strong>{newProjectForm.name.trim() || 'project'}</strong>
+                  <small>{newProjectForm.parent.trim().replace(/^\/home\/[^/]+/, '~')}</small>
+                </div>
+                {(newProjectForm.template || 'maven') === 'maven' && (
+                  <ul>
+                    <li><PopIcon name="folder" size={13} />src/main/java/com/example</li>
+                    <li className="nested"><PopIcon name="java" size={13} />Main.java</li>
+                    <li><PopIcon name="file" size={13} />pom.xml</li>
+                  </ul>
+                )}
+              </div>
+              {newProjectForm.error && <p className="pop-error" role="alert"><PopIcon name="alert" size={14} />{newProjectForm.error}</p>}
+            </div>
+            <footer className="pop-foot">
+              <button type="button" className="pop-btn ghost" disabled={newProjectForm.busy} onClick={() => setNewProjectForm(null)}>Cancel</button>
+              <button type="submit" className="pop-btn primary" disabled={newProjectForm.busy}>
+                {newProjectForm.busy ? 'Creating…' : <>Create project <PopIcon name="arrow" size={15} /></>}
+              </button>
+            </footer>
+          </form>
+        </dialog>, document.body
+      )}
       {pendingDelete && createPortal(
         <dialog ref={deleteDialog} className="java-config-dialog delete-file-dialog" aria-labelledby="delete-file-title" aria-describedby="delete-file-description"
           onCancel={(event) => { event.preventDefault(); setPendingDelete(null) }}>
@@ -3050,11 +3281,11 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       }}
                     >
                       <span className="context-menu-label-wrap">
-                        {entry.icon && <TreeIcon name={entry.icon} />}
+                        <MenuGlyph label={entry.label} icon={entry.icon} />
                         <span>{entry.label}</span>
                       </span>
                       {entry.shortcut && <kbd className="context-menu-shortcut">{entry.shortcut}</kbd>}
-                      {hasSubmenu && <span className="context-menu-arrow" aria-hidden="true">›</span>}
+                      {hasSubmenu && <span className="context-menu-arrow" aria-hidden="true"><PopIcon name="chevronRight" size={13} /></span>}
                     </button>
                   )
                 })}
@@ -3138,7 +3369,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           </div>
         </div>
         <nav className="workbench-menu" aria-label="IDE menu">
-        <button type="button" className="workbench-menu-toggle" aria-label="Menu" aria-expanded={menuOpen} onClick={() => { setMenuOpen(!menuOpen); setActiveMenu(null); setNewMenuOpen(false) }}>☰</button>
+        <button type="button" className="workbench-menu-toggle" aria-label="Menu" aria-expanded={menuOpen} onClick={() => { setMenuOpen(!menuOpen); setActiveMenu(null); setNewMenuOpen(false) }}><PopIcon name="menu" size={16} /></button>
           {menuOpen && <div className="workbench-menu-bar">{Object.entries(menus).map(([name, items]) => (
             <div className="workbench-menu-group" key={name}>
               <button type="button" aria-expanded={activeMenu === name} onClick={() => { setNewMenuOpen(false); setActiveMenu(activeMenu === name ? null : name) }}>{name}</button>
@@ -3146,7 +3377,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 <div className="workbench-menu-items">
                   {name === 'File' && renderNewMenu(parentFolder(active))}
                   {items.map(([label, action]) => (
-                    <button type="button" key={label} disabled={!action} onClick={() => { setActiveMenu(null); setMenuOpen(false); action?.() }}>{label}</button>
+                    <button type="button" key={label} disabled={!action} onClick={() => { setActiveMenu(null); setMenuOpen(false); action?.() }}><MenuGlyph label={label} />{label}</button>
                   ))}
                 </div>
               )}
@@ -3156,7 +3387,6 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         <details className="toolbar-popover project-switcher">
           <summary title={workspace.root || 'Switch project'}><span>{workspace.name || 'Open Project'}</span><span className="project-switcher-chevron" aria-hidden="true" /></summary>
           <div>
-            {!webPulse && <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; openNewProject() }}>New Project…</button>}
             <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; openFolderPicker() }}>Open Project…</button>
             {webPulse && <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; importFiles(folderInputRef) }}>Import Folder…</button>}
             {!webPulse && recentProjects.length > 0 && <strong>Recent Projects</strong>}
@@ -3215,7 +3445,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             >
               <TreeIcon name="stop" />
             </button>
-            <button type="button" className="ghost run-toggle" onClick={showRun} aria-label="Edit Run/Debug configurations" title="Edit Run/Debug configurations">⋮</button>
+            <button type="button" className="ghost run-toggle" onClick={showRun} aria-label="Edit Run/Debug configurations" title="Edit Run/Debug configurations"><PopIcon name="more" size={15} /></button>
           </div></>}
           {mode !== 'chat' && <button className="ghost workbench-icon-button" title="Search Everywhere (Double Shift)" aria-label="Search Everywhere" onClick={() => setSearchEverywhere(true)}><WorkbenchIcon name="search" /></button>}
           <div className="picker-wrap">
@@ -3231,95 +3461,55 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             {pickerOpen && (
               <>
                 <div className="picker-overlay" onClick={() => setPickerOpen(false)} />
-                <div className="picker" onClick={(e) => e.stopPropagation()}>
-                  <div className="picker-label">Pollinations (Server Key)</div>
-                  {catalog.free.map((m) => (
-                    <button key={m.id} className={m.id === selected.id ? 'on' : ''} onClick={() => pickModel(m.id)}>
-                      <strong>{m.label}</strong>
-                      <span>{m.blurb}</span>
-                    </button>
-                  ))}
-                  <div className="picker-section-head">
-                    <span className="picker-label">Google Gemini</span>
-                    <button
-                      type="button"
-                      className="picker-info-tag"
-                      title="How to get free Gemini API key"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setPickerOpen(false)
-                        openTokenHelper('gemini')
-                      }}
-                    >
-                      <span className="info-i">ℹ</span>
-                      <span>How to get key</span>
-                    </button>
-                  </div>
-                  {catalog.premium.filter((m) => m.provider === 'gemini').map((m) => (
-                    <div key={m.id} className={`picker-row ${m.id === selected.id ? 'on' : ''}`}>
-                      <button
-                        type="button"
-                        className="picker-model-btn"
-                        onClick={() => pickModel(m.id)}
-                      >
-                        <strong>{m.label}</strong>
-                        <span>{m.blurb}{vault.gemini ? ' · ready' : ' · token required'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="picker-row-info-btn"
-                        title="View step-by-step instructions to get Gemini token"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setPickerOpen(false)
-                          openTokenHelper('gemini')
-                        }}
-                      >
-                        ℹ
-                      </button>
+                <div className="model-menu" role="dialog" aria-label="Choose AI model" onClick={(e) => e.stopPropagation()}>
+                  <header className="model-menu-head">
+                    <span className="pop-badge small"><PopIcon name="sparkle" size={16} /></span>
+                    <div className="pop-titles">
+                      <strong>AI Model</strong>
+                      <small>Using {selected.label}</small>
                     </div>
-                  ))}
-
-                  <div className="picker-section-head">
-                    <span className="picker-label">ChatGPT / OpenAI</span>
-                    <button
-                      type="button"
-                      className="picker-info-tag"
-                      title="How to get OpenAI API key"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setPickerOpen(false)
-                        openTokenHelper('openai')
-                      }}
-                    >
-                      <span className="info-i">ℹ</span>
-                      <span>How to get key</span>
-                    </button>
+                    <button type="button" className="pop-close" aria-label="Close" onClick={() => setPickerOpen(false)}><PopIcon name="close" size={14} /></button>
+                  </header>
+                  <div className="model-menu-scroll">
+                    {[
+                      { id: 'free', title: 'Pollinations', note: 'Free', icon: 'zap', ready: true, models: catalog.free },
+                      { id: 'gemini', title: 'Google Gemini', note: vault.gemini ? 'Key ready' : 'Needs key', icon: 'sparkle', ready: Boolean(vault.gemini), help: 'gemini', models: catalog.premium.filter((m) => m.provider === 'gemini') },
+                      { id: 'openai', title: 'OpenAI', note: vault.openai ? 'Key ready' : 'Needs key', icon: 'bot', ready: Boolean(vault.openai), help: 'openai', models: catalog.premium.filter((m) => m.provider === 'openai') }
+                    ].filter((group) => group.models.length).map((group) => (
+                      <section key={group.id} className="model-group" aria-label={group.title}>
+                        <div className="model-group-head">
+                          <span className={`model-group-icon is-${group.id}`}><PopIcon name={group.icon} size={13} /></span>
+                          <span className="model-group-title">{group.title}</span>
+                          <span className={`model-status ${group.ready ? 'ready' : 'missing'}`}>{group.note}</span>
+                          {group.help && (
+                            <button
+                              type="button"
+                              className="model-help"
+                              title={`How to get a ${group.title} API key`}
+                              aria-label={`How to get a ${group.title} API key`}
+                              onClick={(e) => { e.stopPropagation(); setPickerOpen(false); openTokenHelper(group.help) }}
+                            >
+                              <PopIcon name="key" size={13} />
+                            </button>
+                          )}
+                        </div>
+                        {group.models.map((m) => (
+                          <button key={m.id} type="button" className={`model-item ${m.id === selected.id ? 'on' : ''}`} aria-pressed={m.id === selected.id} onClick={() => pickModel(m.id)}>
+                            <span className="model-item-text">
+                              <strong>{m.label}</strong>
+                              <small>{m.blurb}</small>
+                            </span>
+                            <span className="model-item-mark">
+                              {m.id === selected.id ? <PopIcon name="check" size={15} strokeWidth={2.4} /> : !group.ready ? <PopIcon name="lock" size={13} /> : null}
+                            </span>
+                          </button>
+                        ))}
+                      </section>
+                    ))}
                   </div>
-                  {catalog.premium.filter((m) => m.provider === 'openai').map((m) => (
-                    <div key={m.id} className={`picker-row ${m.id === selected.id ? 'on' : ''}`}>
-                      <button
-                        type="button"
-                        className="picker-model-btn"
-                        onClick={() => pickModel(m.id)}
-                      >
-                        <strong>{m.label}</strong>
-                        <span>{m.blurb}{vault.openai ? ' · ready' : ' · token required'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="picker-row-info-btn"
-                        title="View step-by-step instructions to get OpenAI token"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setPickerOpen(false)
-                          openTokenHelper('openai')
-                        }}
-                      >
-                        ℹ
-                      </button>
-                    </div>
-                  ))}
+                  <footer className="model-menu-foot">
+                    <button type="button" onClick={() => { setPickerOpen(false); setVaultOpen(true) }}><PopIcon name="key" size={13} /> Manage API keys</button>
+                  </footer>
                 </div>
               </>
             )}
@@ -3330,7 +3520,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             onClick={() => setLeftOpen((v) => !v)}
             title={leftOpen ? "Hide File Tree (Ctrl+B)" : "Open File Tree (Ctrl+B)"}
           >
-            <span className="panel-ico">{leftOpen ? '◧' : '📂'}</span>
+            <span className="panel-ico"><PopIcon name="sidebar" size={15} /></span>
             <span className="panel-btn-label">{leftOpen ? 'Files' : 'Open Files'}</span>
           </button>
           <button
@@ -3339,7 +3529,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             hidden={mode === 'chat'}
             title={rightOpen ? 'Hide Assistant (Ctrl+J)' : 'Open Assistant (Ctrl+J)'}
           >
-            <span className="panel-ico">{rightOpen ? '◨' : '💬'}</span>
+            <span className="panel-ico"><PopIcon name="panelRight" size={15} /></span>
             <span className="panel-btn-label">AI Chat</span>
           </button>
           <button className="ghost pane-btn" onClick={() => pane === 'chat' ? setPane('editor') : openChat()}>
@@ -3350,12 +3540,12 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             onClick={() => { setNameDraft(userName); setWelcomeModalOpen(true) }}
             title="Personalize your name"
           >
-            <span className="user-pill-sparkle">✦</span>
+            <span className="user-pill-sparkle"><PopIcon name="sparkle" size={14} /></span>
             <span>{userName ? `Hi, ${userName}` : 'Set Name'}</span>
           </button>
           <button className="ghost tokens-btn workbench-icon-button" aria-label="Tokens" title="Tokens" onClick={() => setVaultOpen(true)}><WorkbenchIcon name="token" /></button>
           <details className="toolbar-popover settings-overflow">
-            <summary aria-label="IDE settings menu" title="Settings">⚙</summary>
+            <summary aria-label="IDE settings menu" title="Settings"><PopIcon name="settings" size={16} /></summary>
             <div>
               <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; setSettingsOpen(true) }}>Settings…</button>
               <button type="button" onClick={(event) => { event.currentTarget.closest('details').open = false; toggleProject() }}>Toggle Project Panel</button>
@@ -3368,7 +3558,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             title="Task & Chat History"
             aria-label="Task & Chat History"
           >
-            <span className="history-btn-icon" aria-hidden="true">↶</span>
+            <span className="history-btn-icon" aria-hidden="true"><PopIcon name="history" size={16} /></span>
           </button>
           <button className="ghost app-btn" onClick={() => setAppModalOpen(true)} title="Use as app on Windows, Mac & Phone">
             <span className="app-dot" />
@@ -3380,7 +3570,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             title="Menu & Settings"
             aria-label="Open Menu"
           >
-            ☰
+            <PopIcon name="menu" size={16} />
           </button>
         </div>
 
@@ -3432,6 +3622,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       {webPulse && (
         <iframe
           ref={pulseFrameRef}
+          onLoad={sendPulseTheme}
           title="Pulse API Studio"
           src="./pulse/index.html"
           hidden={!pulseMode}
@@ -3458,7 +3649,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
         }}
       >
         <nav className="workbench-strip project-strip" aria-label="Project tools">
-          <button type="button" aria-label="Toggle Project" title="Project (Ctrl+B)" aria-pressed={leftOpen && !commitSideOpen} onClick={toggleProject}>▤</button>
+          <button type="button" aria-label="Toggle Project" title="Project (Ctrl+B)" aria-pressed={leftOpen && !commitSideOpen} onClick={toggleProject}><PopIcon name="sidebar" size={16} /></button>
           <button type="button" aria-label="Commit" title="Commit (Ctrl+K)" aria-pressed={leftOpen && commitSideOpen} onClick={toggleCommitSide}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="4" />
@@ -3466,15 +3657,15 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               <line x1="16" y1="12" x2="22" y2="12" />
             </svg>
           </button>
-          <button type="button" aria-label="Structure" title="Structure" aria-pressed={structureOpen} onClick={toggleStructure}>▥</button>
-          <button type="button" aria-label="Search Everywhere" title="Search Everywhere" onClick={() => setSearchEverywhere(true)}>⌕</button>
-          <button type="button" aria-label="Settings" title="Settings" onClick={() => setSettingsOpen(true)}>⚙</button>
+          <button type="button" aria-label="Structure" title="Structure" aria-pressed={structureOpen} onClick={toggleStructure}><PopIcon name="structure" size={16} /></button>
+          <button type="button" aria-label="Search Everywhere" title="Search Everywhere" onClick={() => setSearchEverywhere(true)}><PopIcon name="search" size={16} /></button>
+          <button type="button" aria-label="Settings" title="Settings" onClick={() => setSettingsOpen(true)}><PopIcon name="settings" size={16} /></button>
         </nav>
         <nav className="workbench-strip tools-strip" aria-label="Workspace tools">
           <button type="button" aria-label="Toggle AI Chat" title="AI Chat" aria-pressed={rightOpen && mode === 'editor'} onClick={toggleAssistant}>
             <WorkbenchIcon name="ai" />
           </button>
-          <button type="button" aria-label="Toggle Maven" title="Maven" aria-pressed={mavenSideOpen && !rightOpen} onClick={toggleMaven}>m</button>
+          <button type="button" aria-label="Toggle Maven" title="Maven" aria-pressed={mavenSideOpen && !rightOpen} onClick={toggleMaven}><PopIcon name="maven" size={16} /></button>
         </nav>
         <nav className="workbench-strip bottom-tools-strip" aria-label="Bottom tools">
           <button
@@ -3495,7 +3686,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               }
             }}
           >
-            ▷
+            <PopIcon name="play" size={16} />
           </button>
           <button
             type="button"
@@ -3515,7 +3706,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               }
             }}
           >
-            <TreeIcon name="debug" />
+            <PopIcon name="bug" size={16} />
           </button>
           <button
             type="button"
@@ -3534,7 +3725,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               }
             }}
           >
-            ⚒
+            <PopIcon name="hammer" size={16} />
           </button>
           <button
             type="button"
@@ -3543,7 +3734,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             aria-pressed={terminalOpen}
             onClick={toggleTerminal}
           >
-            ›_
+            <PopIcon name="terminal" size={16} />
           </button>
           <button
             type="button"
@@ -3552,12 +3743,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             aria-pressed={vcsOpen}
             onClick={toggleVcsLog}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="6" y1="3" x2="6" y2="15" />
-              <circle cx="18" cy="6" r="3" />
-              <circle cx="6" cy="18" r="3" />
-              <path d="M18 9a9 9 0 0 1-9 9" />
-            </svg>
+            <PopIcon name="git" size={16} />
           </button>
         </nav>
         {!leftOpen && (
@@ -3566,7 +3752,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             onClick={() => setLeftOpen(true)}
             title="Open Files Sidebar (Ctrl+B)"
           >
-            <span>▶ 📂 Files</span>
+            <span><PopIcon name="sidebar" size={15} /> Files</span>
           </button>
         )}
         {!rightOpen && (
@@ -3575,7 +3761,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             onClick={openChat}
             title="Open AI Chat (Ctrl+J)"
           >
-            <span>💬 Chat ◀</span>
+            <span><PopIcon name="chat" size={15} /> Chat</span>
           </button>
         )}
         <aside className="side">
@@ -3600,8 +3786,8 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     const anchor = event.currentTarget.getBoundingClientRect()
                     openProjectMenu({ clientX: anchor.left, clientY: anchor.bottom, preventDefault() {} }, tree)
                     setNewMenuOpen(true)
-                  }} disabled={!tree} aria-label="New project item" title="New project item">＋</button>
-                  <button className="ghost tiny" onClick={revealCurrentFile} disabled={!active} aria-label="Reveal Open File" title="Reveal Open File">◎</button>
+                  }} disabled={!tree} aria-label="New project item" title="New project item"><PopIcon name="plus" size={15} /></button>
+                  <button className="ghost tiny" onClick={revealCurrentFile} disabled={!active} aria-label="Reveal Open File" title="Reveal Open File"><PopIcon name="target" size={15} /></button>
                   <button className="ghost tiny" onClick={expandProject} disabled={!tree} aria-label="Expand All" title="Expand All"><TreeIcon name="expand" /></button>
                   <button className="ghost tiny" onClick={collapseProject} disabled={!tree} aria-label="Collapse All" title="Collapse All"><TreeIcon name="collapse" /></button>
                   <button type="button" ref={projectViewButton} className="ghost tiny" aria-expanded={Boolean(projectViewPosition)} aria-controls="project-view-popup" aria-label="Project view options" title="Project view options" onClick={(event) => {
@@ -3610,7 +3796,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       left: Math.max(4, Math.min(anchor.left, window.innerWidth - 228)),
                       top: Math.max(4, Math.min(anchor.bottom + 4, window.innerHeight - 190))
                     })
-                  }}>⋮</button>
+                  }}><PopIcon name="more" size={15} /></button>
                   {projectViewPosition && createPortal(
                     <div className="project-view-popup" id="project-view-popup" role="group" aria-label="Project view options" style={projectViewPosition}>
                       <button type="button" autoFocus onClick={() => { setProjectViewPosition(null); openFolderPicker() }}>Open Project…</button>
@@ -3620,7 +3806,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       <button type="button" onClick={() => { setProjectViewPosition(null); closeProject(true) }}>Remove Project from Sidebar</button>
                     </div>, document.body
                   )}
-                  <button className="ghost tiny" onClick={() => setLeftOpen(false)} title="Hide Sidebar (Ctrl+B)">◀</button>
+                  <button className="ghost tiny" onClick={() => setLeftOpen(false)} title="Hide Sidebar (Ctrl+B)"><PopIcon name="chevronLeft" size={14} /></button>
                 </div>
               </>
             ) : (
@@ -3628,7 +3814,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 <span>No Project</span>
                 <div className="side-head-actions">
                   <button className="primary tiny" onClick={openFolderPicker}>Open</button>
-                  <button className="ghost tiny" onClick={() => setLeftOpen(false)} title="Hide Sidebar (Ctrl+B)">◀</button>
+                  <button className="ghost tiny" onClick={() => setLeftOpen(false)} title="Hide Sidebar (Ctrl+B)"><PopIcon name="chevronLeft" size={14} /></button>
                 </div>
               </>
             )}
@@ -3687,7 +3873,6 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 <div className="no-project-box">
                   <p>No project folder opened.<br/>Open your local project to work on it.</p>
                   <button className="primary" onClick={openFolderPicker}>Open Project</button>
-                  {!webPulse && <button className="ghost" onClick={openNewProject}>New Project…</button>}
                 </div>
               ) : (
                 <div className="empty"><p>Loading tree</p></div>
@@ -3745,7 +3930,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
 
               {outline.length > 3 && (
                 <div className="structure-filter-bar">
-                  <span className="structure-search-icon">🔍</span>
+                  <span className="structure-search-icon"><PopIcon name="search" size={14} /></span>
                   <input
                     type="text"
                     className="structure-filter-input"
@@ -3891,7 +4076,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     onClick={toggleTempChat}
                     title={isTempChat ? "Temporary chat is ON (Messages are not saved to history)" : "Start a temporary chat (Won't be saved in history)"}
                   >
-                    <span>{isTempChat ? '🕶️' : '🔒'}</span>
+                    <span>{isTempChat ? <PopIcon name="eyeOff" size={14} /> : <PopIcon name="lock" size={14} />}</span>
                     <span className="temp-btn-text">{isTempChat ? 'Temp Chat ON' : 'Temporary Chat'}</span>
                     {isTempChat && <span className="temp-dot" />}
                   </button>
@@ -3910,7 +4095,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     title="Open Task & Chat History"
                     aria-label="Open Task & Chat History"
                   >
-                    <span aria-hidden="true">↶</span>
+                    <span aria-hidden="true"><PopIcon name="history" size={14} /></span>
                   </button>
                   <button
                     type="button"
@@ -3919,7 +4104,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     title="Export conversation as Markdown"
                     disabled={!messages.length}
                   >
-                    <span>📥</span>
+                    <span><PopIcon name="download" size={14} /></span>
                     <span className="cm-btn-text">.md</span>
                   </button>
                   <button
@@ -3929,7 +4114,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     title="Export conversation as JSON"
                     disabled={!messages.length}
                   >
-                    <span>📥</span>
+                    <span><PopIcon name="download" size={14} /></span>
                     <span className="cm-btn-text">.json</span>
                   </button>
                   <button
@@ -3938,7 +4123,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     onClick={() => setSettingsOpen(true)}
                     title="Chat & Model Settings"
                   >
-                    <span>⚙️</span>
+                    <span><PopIcon name="settings" size={14} /></span>
                     <span className="cm-btn-text">Settings</span>
                   </button>
                 </div>
@@ -3948,7 +4133,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 {isTempChat && (
                   <div className="temp-chat-banner">
                     <div className="temp-banner-info">
-                      <span>🕶️</span>
+                      <span><PopIcon name="eyeOff" size={14} /></span>
                       <div>
                         <strong>Temporary Chat</strong> — Messages in this session will not be saved to task history.
                       </div>
@@ -3967,7 +4152,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 )}
                 {!messages.length ? (
                   <div className="chat-mode-greeting">
-                    <div className="chat-greeting-sparkle">✨</div>
+                    <div className="chat-greeting-sparkle"><PopIcon name="sparkle" size={14} /></div>
                     <h1 className="chat-greeting-h1">
                       {userName ? `Hello, ${userName}` : 'Hello, Creator'}
                     </h1>
@@ -3980,7 +4165,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         onClick={() => send("Brainstorm modern product ideas and architecture patterns for a high-performance web app")}
                       >
                         <div className="chat-card-top">
-                          <span>💡</span>
+                          <span><PopIcon name="bulb" size={14} /></span>
                           <span>Brainstorm Ideas</span>
                         </div>
                         <span className="chat-card-sub">Generate novel concepts, features &amp; architectural plans</span>
@@ -3992,7 +4177,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         onClick={() => send("Write a modern, responsive React component with smooth CSS animations and clean state management")}
                       >
                         <div className="chat-card-top">
-                          <span>💻</span>
+                          <span><PopIcon name="monitor" size={14} /></span>
                           <span>Write Clean Code</span>
                         </div>
                         <span className="chat-card-sub">Generate production-ready components, styles &amp; algorithms</span>
@@ -4004,7 +4189,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         onClick={() => send("Find potential bugs, edge cases, and performance bottlenecks in code")}
                       >
                         <div className="chat-card-top">
-                          <span>🔍</span>
+                          <span><PopIcon name="search" size={14} /></span>
                           <span>Debug &amp; Optimize</span>
                         </div>
                         <span className="chat-card-sub">Detect edge cases, memory leaks &amp; security vulnerabilities</span>
@@ -4016,7 +4201,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         onClick={() => send("Explain how modern web frameworks handle state hydration and reactivity")}
                       >
                         <div className="chat-card-top">
-                          <span>⚡</span>
+                          <span><PopIcon name="zap" size={14} /></span>
                           <span>Explain Concepts</span>
                         </div>
                         <span className="chat-card-sub">Break down complex technologies with clear illustrations</span>
@@ -4040,7 +4225,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         return (
                           <div className="bubble err" key={i}>
                             <div className="err-title">
-                              <span>⚠️</span>
+                              <span><PopIcon name="alert" size={14} /></span>
                               <span>AI Service Notice</span>
                             </div>
                             <div className="err-msg">{m.text}</div>
@@ -4057,7 +4242,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                                   }
                                 }}
                               >
-                                🔄 Retry Prompt
+                                <PopIcon name="refresh" size={14} /> Retry Prompt
                               </button>
                               <button
                                 type="button"
@@ -4069,21 +4254,21 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                                   setTimeout(() => setCopiedMsgIdx(null), 2000)
                                 }}
                               >
-                                {copiedMsgIdx === i ? '✓ Copied' : '📋 Copy Error'}
+                                {copiedMsgIdx === i ? <><PopIcon name="check" size={14} /> Copied</> : <><PopIcon name="copy" size={14} /> Copy Error</>}
                               </button>
                               <button
                                 type="button"
                                 className="err-btn"
                                 onClick={() => exportErrorLog(m.text, i, 'markdown')}
                               >
-                                💾 Export .md
+                                <PopIcon name="save" size={14} /> Export .md
                               </button>
                               <button
                                 type="button"
                                 className="err-btn"
                                 onClick={() => exportErrorLog(m.text, i, 'json')}
                               >
-                                📄 Export .json
+                                <PopIcon name="file" size={14} /> Export .json
                               </button>
                               {selected.tier !== 'free' && (
                                 <button
@@ -4097,7 +4282,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                                     }
                                   }}
                                 >
-                                  ⚡ Use Free Model
+                                  <PopIcon name="zap" size={14} /> Use Free Model
                                 </button>
                               )}
                               <button
@@ -4105,7 +4290,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                                 className="err-btn"
                                 onClick={() => setSettingsOpen(true)}
                               >
-                                ⚙️ Settings
+                                <PopIcon name="settings" size={14} /> Settings
                               </button>
                             </div>
                           </div>
@@ -4124,7 +4309,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
 
                       return (
                         <div className="cm-row-ai" key={i}>
-                          <div className="cm-ai-avatar">✨</div>
+                          <div className="cm-ai-avatar"><PopIcon name="sparkle" size={14} /></div>
                           <div className="cm-ai-body">
                             <div className="cm-ai-model-tag">{selected.label}</div>
                             <div className="cm-ai-content">
@@ -4138,7 +4323,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                                   title="Good response"
                                   onClick={() => setMsgFeedback((prev) => ({ ...prev, [i]: prev[i] === 'up' ? null : 'up' }))}
                                 >
-                                  👍
+                                  <PopIcon name="thumbsUp" size={14} />
                                 </button>
                                 <button
                                   type="button"
@@ -4146,7 +4331,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                                   title="Bad response"
                                   onClick={() => setMsgFeedback((prev) => ({ ...prev, [i]: prev[i] === 'down' ? null : 'down' }))}
                                 >
-                                  👎
+                                  <PopIcon name="thumbsDown" size={14} />
                                 </button>
                                 <button
                                   type="button"
@@ -4160,7 +4345,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                                     }
                                   }}
                                 >
-                                  🔄
+                                  <PopIcon name="refresh" size={14} />
                                 </button>
                                 <button
                                   type="button"
@@ -4172,7 +4357,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                                     setTimeout(() => setCopiedMsgIdx(null), 2000)
                                   }}
                                 >
-                                  {copiedMsgIdx === i ? '✓' : '📋'}
+                                  {copiedMsgIdx === i ? <PopIcon name="check" size={14} /> : <PopIcon name="copy" size={14} />}
                                 </button>
                                 <button
                                   type="button"
@@ -4190,7 +4375,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                                     URL.revokeObjectURL(url)
                                   }}
                                 >
-                                  💾
+                                  <PopIcon name="save" size={14} />
                                 </button>
                                 <button
                                   type="button"
@@ -4198,7 +4383,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                                   title="Read aloud"
                                   onClick={() => handleListen(m.text, i)}
                                 >
-                                  {speakingIdx === i ? '⏹️' : '🔊'}
+                                  {speakingIdx === i ? <PopIcon name="stop" size={14} /> : <PopIcon name="volume" size={14} />}
                                 </button>
                               </div>
                             )}
@@ -4247,7 +4432,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       onClick={toggleListening}
                       title={listening ? "Listening... click to stop" : "Voice input"}
                     >
-                      🎙️
+                      <PopIcon name="mic" size={14} />
                     </button>
 
                     <div className="capsule-model-wrap">
@@ -4258,7 +4443,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         title="Select AI Model"
                       >
                         <span className="pill-name">{modelShortName}</span>
-                        <span className="pill-arrow">⌵</span>
+                        <span className="pill-arrow"><PopIcon name="chevronDown" size={14} /></span>
                       </button>
                     </div>
 
@@ -4269,7 +4454,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       disabled={!busy && !draft.trim()}
                       title={busy ? "Stop response" : "Send prompt (Enter)"}
                     >
-                      {busy ? '■' : '↑'}
+                      {busy ? <PopIcon name="stop" size={14} /> : <PopIcon name="arrowUp" size={16} />}
                     </button>
                   </div>
                 </form>
@@ -4284,7 +4469,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     onClick={() => setLeftOpen(true)}
                     title="Show Files Sidebar (Ctrl+B)"
                   >
-                    📂 Open Files (Ctrl+B)
+                    <PopIcon name="folderOpen" size={14} /> Open Files (Ctrl+B)
                   </button>
                 )}
                 <div className="editor-tab-strip" ref={editorTabStrip}>
@@ -4307,7 +4492,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         >
                           <span className={`project-tree-icon ${fileIconName(name)}`}><TreeIcon name={fileIconName(name)} /></span>
                           <span style={{ color: hasError ? '#ff7b72' : undefined, textDecoration: hasError ? 'underline wavy #f85149 1px' : undefined }}>
-                            {name}{isDirty(tab) ? ' ●' : ''}{hasError ? ' ⚠️' : ''}
+                            {name}{isDirty(tab) ? ' ●' : ''}{hasError ? <> <PopIcon name="alert" size={14} /></> : ''}
                           </span>
                         </button>
                         <button
@@ -4350,7 +4535,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       onClick={() => setMdMode('edit')}
                       title="Edit Markdown source"
                     >
-                      ✏️ Edit
+                      <PopIcon name="pencil" size={14} /> Edit
                     </button>
                     <button
                       type="button"
@@ -4358,7 +4543,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       onClick={() => setMdMode('reader')}
                       title="Rendered Markdown Reader"
                     >
-                      📖 Reader
+                      <PopIcon name="book" size={14} /> Reader
                     </button>
                     <button
                       type="button"
@@ -4366,7 +4551,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       onClick={() => setMdMode('split')}
                       title="Side-by-side Split View"
                     >
-                      ◫ Split
+                      <PopIcon name="columns" size={14} /> Split
                     </button>
                   </div>
                 )}
@@ -4376,7 +4561,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     onClick={openChat}
                     title="Show AI Chat (Ctrl+J)"
                   >
-                    💬 Open Chat (Ctrl+J)
+                    <PopIcon name="chat" size={14} /> Open Chat (Ctrl+J)
                   </button>
                 )}
               </div>
@@ -4463,7 +4648,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 </div>
               ) : (
                 <div className="workbench-home">
-                  <div className="workbench-symbol" aria-hidden="true">{mode === 'agent' ? '✦' : '⌘'}</div>
+                  <div className="workbench-symbol" aria-hidden="true">{mode === 'agent' ? <PopIcon name="sparkle" size={14} /> : <PopIcon name="code" size={14} />}</div>
                   <h2>{mode === 'agent' ? 'Workspace agent' : workspace.name || 'Welcome to Ather Studio'}</h2>
                   <p>{mode === 'agent'
                     ? 'Describe a task in the Agent panel. Review proposed files here before saving.'
@@ -4525,7 +4710,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           <div className="chat-head">
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span>{mode === 'agent' ? 'Workspace Agent' : 'AI Chat'}</span>
-              {isTempChat && <span className="history-mode-tag" style={{ background: 'rgba(168, 85, 247, 0.2)', color: '#d8b4fe', padding: '1px 5px', fontSize: 10 }}>🕶️ Temp</span>}
+              {isTempChat && <span className="history-mode-tag" style={{ background: 'rgba(168, 85, 247, 0.2)', color: '#d8b4fe', padding: '1px 5px', fontSize: 10 }}><PopIcon name="eyeOff" size={14} /> Temp</span>}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
               <button
@@ -4544,7 +4729,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 title={isTempChat ? "Temporary chat is ON (Not saved)" : "Start temporary chat (Not saved in history)"}
                 style={{ fontSize: 11, padding: '2px 7px' }}
               >
-                {isTempChat ? '🕶️ Temp' : '🔒 Temp'}
+                {isTempChat ? <><PopIcon name="eyeOff" size={14} /> Temp</> : <><PopIcon name="lock" size={14} /> Temp</>}
               </button>
               <button
                 type="button"
@@ -4553,14 +4738,14 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 title="Task History & Past Sessions"
                 style={{ fontSize: 11, padding: '2px 7px' }}
               >
-                📜
+                <PopIcon name="history" size={14} />
               </button>
               <button
                 className="ghost tiny"
                 onClick={() => { setRightOpen(false); setPane('editor') }}
                 title="Hide AI Chat (Ctrl+J)"
               >
-                ✕
+                <PopIcon name="close" size={14} />
               </button>
             </div>
           </div>
@@ -4568,7 +4753,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             {isTempChat && (
               <div className="temp-chat-banner" style={{ margin: '8px 12px 12px 12px', padding: '6px 10px', fontSize: 11 }}>
                 <div className="temp-banner-info">
-                  <span>🕶️</span>
+                  <span><PopIcon name="eyeOff" size={14} /></span>
                   <span><strong>Temp Chat:</strong> Not saved in history</span>
                 </div>
                 <button
@@ -4583,7 +4768,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             )}
             {!messages.length && (
               <div className="empty chat-empty-guide">
-                <div className="chat-empty-icon">✨</div>
+                <div className="chat-empty-icon"><PopIcon name="sparkle" size={14} /></div>
                 <h4>How can Aether help?</h4>
                 <p>Ask about your code, or choose a starter prompt.</p>
                 <div className="chat-empty-presets">
@@ -4595,7 +4780,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       setTimeout(() => chatInputRef.current?.focus(), 50)
                     }}
                   >
-                    📖 "Explain how this project works"
+                    <PopIcon name="book" size={14} /> "Explain how this project works"
                   </button>
                   <button
                     type="button"
@@ -4605,7 +4790,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       setTimeout(() => chatInputRef.current?.focus(), 50)
                     }}
                   >
-                    🎨 "Write a modern UI component"
+                    <PopIcon name="palette" size={14} /> "Write a modern UI component"
                   </button>
                   <button
                     type="button"
@@ -4615,7 +4800,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       setTimeout(() => chatInputRef.current?.focus(), 50)
                     }}
                   >
-                    ⚡ "Write a clean JavaScript function"
+                    <PopIcon name="zap" size={14} /> "Write a clean JavaScript function"
                   </button>
                 </div>
               </div>
@@ -4633,9 +4818,13 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               }
               if (m.role === 'tool') {
                 return (
-                  <div className="tool" key={i}>
-                    <b>{m.name}</b> {m.status}
-                    {m.output ? `\n${String(m.output).slice(0, 500)}` : ''}
+                  <div className="tool tool-card" key={i}>
+                    <div className="tool-card-head">
+                      <span className="tool-card-icon"><PopIcon name="check" size={12} strokeWidth={2.4} /></span>
+                      <b>{m.name}</b>
+                      <span className="tool-card-status">{m.status}</span>
+                    </div>
+                    {m.output ? <div className="tool-card-output">{String(m.output).slice(0, 500)}</div> : null}
                   </div>
                 )
               }
@@ -4643,7 +4832,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 return (
                   <div className="bubble err" key={i}>
                     <div className="err-title">
-                      <span>⚠️</span>
+                      <span><PopIcon name="alert" size={14} /></span>
                       <span>AI Service Notice</span>
                     </div>
                     <div className="err-msg">{m.text}</div>
@@ -4661,7 +4850,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         }}
                         title="Retry sending this prompt"
                       >
-                        🔄 Retry
+                        <PopIcon name="refresh" size={14} /> Retry
                       </button>
                       <button
                         type="button"
@@ -4674,7 +4863,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         }}
                         title="Copy error details to clipboard"
                       >
-                        {copiedMsgIdx === i ? '✓ Copied' : '📋 Copy Error'}
+                        {copiedMsgIdx === i ? <><PopIcon name="check" size={14} /> Copied</> : <><PopIcon name="copy" size={14} /> Copy Error</>}
                       </button>
                       <button
                         type="button"
@@ -4682,7 +4871,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         onClick={() => exportErrorLog(m.text, i, 'markdown')}
                         title="Export error diagnostic report as Markdown"
                       >
-                        💾 Export .md
+                        <PopIcon name="save" size={14} /> Export .md
                       </button>
                       <button
                         type="button"
@@ -4690,7 +4879,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         onClick={() => exportErrorLog(m.text, i, 'json')}
                         title="Export error log as JSON"
                       >
-                        📄 Export .json
+                        <PopIcon name="file" size={14} /> Export .json
                       </button>
                       {selected.tier !== 'free' && (
                         <>
@@ -4703,7 +4892,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                             }}
                             title={`Configure ${selected.provider === 'gemini' ? 'Gemini' : 'OpenAI'} API token`}
                           >
-                            🔑 Configure {selected.provider === 'gemini' ? 'Gemini' : 'OpenAI'}
+                            <PopIcon name="key" size={14} /> Configure {selected.provider === 'gemini' ? 'Gemini' : 'OpenAI'}
                           </button>
                           <button
                             type="button"
@@ -4717,7 +4906,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                             }}
                             title="Switch to Aether Spark"
                           >
-                            ⚡ Use Free Model
+                            <PopIcon name="zap" size={14} /> Use Free Model
                           </button>
                         </>
                       )}
@@ -4727,7 +4916,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         onClick={() => setSettingsOpen(true)}
                         title="Open Studio Settings"
                       >
-                        ⚙️ Settings
+                        <PopIcon name="settings" size={14} /> Settings
                       </button>
                     </div>
                   </div>
@@ -4762,6 +4951,10 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
 
               return (
                 <div className="ai-msg-block" key={i}>
+                  <div className="ai-msg-head">
+                    <span className="ai-msg-avatar"><PopIcon name="sparkle" size={12} /></span>
+                    <span>Aether</span>
+                  </div>
                   <div className="bubble ai">
                     <MarkdownViewer content={m.text} />
                   </div>
@@ -4952,15 +5145,25 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 </div>
               )
             })}
-            {busy && <div className="tool" role="status">{streamText || (mode === 'agent' ? 'Working on task…' : 'Waiting for response…')}</div>}
+            {busy && (
+              <div className="ai-msg-block is-streaming" role="status">
+                <div className="ai-msg-head">
+                  <span className="ai-msg-avatar"><PopIcon name="sparkle" size={12} /></span>
+                  <span>Aether</span>
+                  {!streamText && <span className="typing-dots" aria-hidden="true"><i /><i /><i /></span>}
+                </div>
+                <div className="bubble ai streaming-text">{streamText || (mode === 'agent' ? 'Working on task…' : 'Thinking…')}</div>
+              </div>
+            )}
           </div>
           <div className="composer">
             <div className="quick-chips">
-              <button type="button" className="quick-chip" onClick={() => handleQuickChip('Explain what this code does in detail')}>💡 Explain</button>
-              <button type="button" className="quick-chip" onClick={() => handleQuickChip('Find any bugs or potential issues in this code')}>🐛 Find bugs</button>
-              <button type="button" className="quick-chip" onClick={() => handleQuickChip('Optimize performance and readability')}>⚡ Optimize</button>
-              <button type="button" className="quick-chip" onClick={() => handleQuickChip('Write comprehensive unit tests for this')}>🧪 Tests</button>
+              <button type="button" className="quick-chip" onClick={() => handleQuickChip('Explain what this code does in detail')}><PopIcon name="bulb" size={14} /> Explain</button>
+              <button type="button" className="quick-chip" onClick={() => handleQuickChip('Find any bugs or potential issues in this code')}><PopIcon name="bug" size={14} /> Find bugs</button>
+              <button type="button" className="quick-chip" onClick={() => handleQuickChip('Optimize performance and readability')}><PopIcon name="zap" size={14} /> Optimize</button>
+              <button type="button" className="quick-chip" onClick={() => handleQuickChip('Write comprehensive unit tests for this')}><PopIcon name="flask" size={14} /> Tests</button>
             </div>
+            <div className="composer-box">
             <textarea
               ref={chatInputRef}
               value={draft}
@@ -4979,10 +5182,12 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               }}
             />
             <div className="composer-row">
-              <span className="hint">Enter to send (Shift+Enter for newline)</span>
-              <button className="primary send-btn" onClick={busy ? stopRequest : send} disabled={!busy && !draft.trim()}>
-                {busy ? 'Stop' : 'Send ➔'}
+              <span className="hint"><kbd>Enter</kbd> send <span className="hint-sep">·</span> <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</span>
+              <button className={`primary send-btn ${busy ? 'is-busy' : ''}`} onClick={busy ? stopRequest : send} disabled={!busy && !draft.trim()}
+                title={busy ? 'Stop' : 'Send'} aria-label={busy ? 'Stop response' : 'Send message'}>
+                {busy ? <PopIcon name="stop" size={14} strokeWidth={2.2} /> : <PopIcon name="arrowUp" size={16} strokeWidth={2.2} />}
               </button>
+            </div>
             </div>
           </div>
         </section>
@@ -5056,7 +5261,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
 
       <footer className="workbench-status">
         <span className="status-crumb">
-          <span className="status-project-badge">□</span>
+          <span className="status-project-badge"><PopIcon name="folder" size={14} /></span>
           <span>{workspace.name || 'No project'}</span>
           {current && (
             <>
@@ -5087,7 +5292,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           }}
           aria-label="Files"
         >
-          <span className="dock-ico">📂</span>
+          <span className="dock-ico"><PopIcon name="folderOpen" size={14} /></span>
           <span className="dock-lbl">Files</span>
           {workspace.root && <span className="dock-dot" />}
         </button>
@@ -5099,7 +5304,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           }}
           aria-label="Editor"
         >
-          <span className="dock-ico">📝</span>
+          <span className="dock-ico"><PopIcon name="pencil" size={14} /></span>
           <span className="dock-lbl">Editor</span>
           {tabs.length > 0 && <span className="dock-badge">{tabs.length}</span>}
         </button>
@@ -5110,7 +5315,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
           }}
           aria-label="AI Chat"
         >
-          <span className="dock-ico">✨</span>
+          <span className="dock-ico"><PopIcon name="sparkle" size={14} /></span>
           <span className="dock-lbl">AI Chat</span>
           {busy && <span className="dock-pulse" />}
         </button>
@@ -5126,7 +5331,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               title="Close"
               style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}
             >
-              ✕
+              <PopIcon name="close" size={14} />
             </button>
             <div className="sheet-handle" />
             <div className="vault-hero">
@@ -5138,10 +5343,10 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             </div>
             <div className="seg">
               <button className={vaultTab === 'openai' ? 'on' : ''} onClick={() => setVaultTab('openai')}>
-                OpenAI / ChatGPT {vault.openai ? '✓' : ''}
+                OpenAI / ChatGPT {vault.openai ? <PopIcon name="check" size={14} /> : ''}
               </button>
               <button className={vaultTab === 'gemini' ? 'on' : ''} onClick={() => setVaultTab('gemini')}>
-                Google Gemini {vault.gemini ? '✓' : ''}
+                Google Gemini {vault.gemini ? <PopIcon name="check" size={14} /> : ''}
               </button>
             </div>
             {vaultTab === 'openai' ? (
@@ -5150,7 +5355,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <label>OpenAI API Key</label>
                     <span className={`vault-status-pill ${vault.openai ? 'configured' : 'empty'}`}>
-                      {vault.openai ? 'Configured ✓' : 'Not configured'}
+                      {vault.openai ? <>Configured <PopIcon name="check" size={14} /></> : 'Not configured'}
                     </span>
                   </div>
                   <button
@@ -5159,7 +5364,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     onClick={() => openTokenHelper('openai')}
                     title="View step-by-step instructions to get an OpenAI key"
                   >
-                    <span className="info-i">ℹ</span>
+                    <span className="info-i"><PopIcon name="info" size={13} /></span>
                     <span>How to get key</span>
                   </button>
                 </div>
@@ -5179,7 +5384,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <label>Gemini API Key</label>
                     <span className={`vault-status-pill ${vault.gemini ? 'configured' : 'empty'}`}>
-                      {vault.gemini ? 'Configured ✓' : 'Not configured'}
+                      {vault.gemini ? <>Configured <PopIcon name="check" size={14} /></> : 'Not configured'}
                     </span>
                   </div>
                   <button
@@ -5188,7 +5393,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     onClick={() => openTokenHelper('gemini')}
                     title="View step-by-step instructions to get a Gemini key"
                   >
-                    <span className="info-i">ℹ</span>
+                    <span className="info-i"><PopIcon name="info" size={13} /></span>
                     <span>How to get key</span>
                   </button>
                 </div>
@@ -5222,14 +5427,14 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                   className="quick-ext-link"
                 >
                   <span>{vaultTab === 'gemini' ? 'Open Google AI Studio' : 'Open OpenAI Platform'}</span>
-                  <span>↗</span>
+                  <span><PopIcon name="external" size={14} /></span>
                 </a>
                 <button
                   type="button"
                   className="quick-steps-btn"
                   onClick={() => openTokenHelper(vaultTab)}
                 >
-                  ℹ View Steps
+                  <PopIcon name="info" size={14} /> View Steps
                 </button>
               </div>
             </div>
@@ -5266,11 +5471,6 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
             { name: 'Settings', run: () => setSettingsOpen(true) }
           ]}
         />
-      )}
-
-      {newProjectOpen && createPortal(
-        <NewProjectDialog onClose={() => setNewProjectOpen(false)} onCreated={handleProjectCreated} />,
-        document.body
       )}
 
       {folderOpen && (
@@ -5351,19 +5551,19 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 className={guideTab === 'phone' ? 'on' : ''}
                 onClick={() => setGuideTab('phone')}
               >
-                📱 Phone (iOS / Android)
+                <PopIcon name="phone" size={14} /> Phone (iOS / Android)
               </button>
               <button
                 className={guideTab === 'desktop' ? 'on' : ''}
                 onClick={() => setGuideTab('desktop')}
               >
-                💻 Windows &amp; Mac
+                <PopIcon name="monitor" size={14} /> Windows &amp; Mac
               </button>
               <button
                 className={guideTab === 'git' ? 'on' : ''}
                 onClick={() => setGuideTab('git')}
               >
-                🐙 Via Git
+                <PopIcon name="git" size={14} /> Via Git
               </button>
             </div>
 
@@ -5372,20 +5572,20 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 {isMobileClient ? (
                   <div className="mobile-download-hub">
                     <div className="mobile-device-badge">
-                      <span>{isIOSClient ? '🍎 iOS Device' : isAndroidClient ? '🤖 Android Device' : '📱 Mobile Device'}</span>
+                      <span>{isIOSClient ? <><PopIcon name="phone" size={14} /> iOS Device</> : isAndroidClient ? <><PopIcon name="bot" size={14} /> Android Device</> : <><PopIcon name="phone" size={14} /> Mobile Device</>}</span>
                       <span className="badge-highlight">Direct Download &amp; Install Hub</span>
                     </div>
 
                     {installPrompt && !installed ? (
                       <div className="mobile-direct-install-box">
                         <button className="primary mobile-install-big-btn" onClick={triggerInstall}>
-                          ⬇️ Install Aether Studio App
+                          <PopIcon name="download" size={14} /> Install Aether Studio App
                         </button>
                         <span className="hint">Direct 1-tap installation to your home screen</span>
                       </div>
                     ) : (
                       <div className="mobile-pwa-guide-box">
-                        <h4>📱 Add Aether to Home Screen</h4>
+                        <h4><PopIcon name="phone" size={14} /> Add Aether to Home Screen</h4>
                         <p className="hint">Run full-screen without browser address bars, with offline AI code editor!</p>
                       </div>
                     )}
@@ -5430,10 +5630,10 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
 
                     <div className="mobile-actions-row">
                       <button className="primary" onClick={() => setAppModalOpen(false)}>
-                        🚀 Launch Web Studio Now
+                        <PopIcon name="rocket" size={14} /> Launch Web Studio Now
                       </button>
                       <button className="ghost small" onClick={handleDownloadShortcut}>
-                        ⬇️ Download Web Shortcut
+                        <PopIcon name="download" size={14} /> Download Web Shortcut
                       </button>
                     </div>
                   </div>
@@ -5445,13 +5645,13 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                           className={qrMode !== 'cloud' ? 'on' : ''}
                           onClick={() => setQrMode('local')}
                         >
-                          📱 Local Wi-Fi (LAN)
+                          <PopIcon name="phone" size={14} /> Local Wi-Fi (LAN)
                         </button>
                         <button
                           className={qrMode === 'cloud' ? 'on' : ''}
                           onClick={() => setQrMode('cloud')}
                         >
-                          🌐 Cloud Web App
+                          <PopIcon name="globe" size={14} /> Cloud Web App
                         </button>
                       </div>
                     ) : null}
@@ -5474,13 +5674,13 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
 
                       <div className="qr-actions-row">
                         <button className="ghost tiny" onClick={handleDownloadQR}>
-                          {qrDownloaded ? '✓ QR Saved!' : '⬇️ Download QR (PNG)'}
+                          {qrDownloaded ? <><PopIcon name="check" size={14} /> QR Saved!</> : <><PopIcon name="download" size={14} /> Download QR (PNG)</>}
                         </button>
                         <button className="ghost tiny" onClick={handleDownloadShortcut}>
-                          ⬇️ Download Shortcut
+                          <PopIcon name="download" size={14} /> Download Shortcut
                         </button>
                         <button className="ghost tiny" onClick={() => window.open(targetQrUrl, '_blank')}>
-                          🔗 Open Mobile Link
+                          <PopIcon name="link" size={14} /> Open Mobile Link
                         </button>
                       </div>
 
@@ -5604,11 +5804,11 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               title="Close"
               style={{ position: 'absolute', top: 12, right: 12, zIndex: 10 }}
             >
-              ✕
+              <PopIcon name="close" size={14} />
             </button>
             <div className="sheet-handle" />
             <div className="apple-badge">
-              <span className="apple-badge-sparkle">✦</span>
+              <span className="apple-badge-sparkle"><PopIcon name="sparkle" size={14} /></span>
               <span>Ather Studio</span>
             </div>
 
@@ -5632,7 +5832,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 }}
               >
                 <div className="apple-input-wrap">
-                  <span className="apple-input-icon">👤</span>
+                  <span className="apple-input-icon"><PopIcon name="user" size={14} /></span>
                   <input
                     type="text"
                     className="apple-name-input"
@@ -5646,7 +5846,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                       className="apple-input-clear"
                       onClick={() => setNameDraft('')}
                     >
-                      ✕
+                      <PopIcon name="close" size={14} />
                     </button>
                   )}
                 </div>
@@ -5682,7 +5882,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                   <span>Settings &amp; Tools</span>
                 </div>
               </div>
-              <button className="ghost tiny close-menu-btn" onClick={() => setMobileMenuOpen(false)}>✕</button>
+              <button className="ghost tiny close-menu-btn" onClick={() => setMobileMenuOpen(false)}><PopIcon name="close" size={14} /></button>
             </div>
 
             <div className="mobile-menu-body">
@@ -5695,12 +5895,12 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     setWelcomeModalOpen(true)
                   }}
                 >
-                  <div className="menu-item-icon">👤</div>
+                  <div className="menu-item-icon"><PopIcon name="user" size={14} /></div>
                   <div className="menu-item-text">
                     <strong>{userName ? `Hi, ${userName}` : 'Set Your Name'}</strong>
                     <span>Personalize your AI workspace</span>
                   </div>
-                  <div className="menu-item-arrow">→</div>
+                  <div className="menu-item-arrow"><PopIcon name="arrow" size={14} /></div>
                 </button>
               </div>
 
@@ -5711,21 +5911,21 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     className={`mobile-mode-btn ${rightOpen && mode === 'editor' ? 'on' : ''}`}
                     onClick={() => { switchMode('chat'); setMobileMenuOpen(false) }}
                   >
-                    <strong>💬 AI Chat</strong>
+                    <strong><PopIcon name="chat" size={14} /> AI Chat</strong>
                     <span>Gemini / GPT Mode</span>
                   </button>
                   <button
                     className={`mobile-mode-btn ${mode === 'agent' ? 'on' : ''}`}
                     onClick={() => { switchMode('agent'); setMobileMenuOpen(false) }}
                   >
-                    <strong>🤖 AI Agent</strong>
+                    <strong><PopIcon name="bot" size={14} /> AI Agent</strong>
                     <span>Multi-step task coding</span>
                   </button>
                   <button
                     className={`mobile-mode-btn ${mode === 'editor' ? 'on' : ''}`}
                     onClick={() => { switchMode('editor'); setMobileMenuOpen(false) }}
                   >
-                    <strong>📝 Editor</strong>
+                    <strong><PopIcon name="pencil" size={14} /> Editor</strong>
                     <span>Direct editing &amp; assist</span>
                   </button>
                 </div>
@@ -5740,12 +5940,12 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     setSettingsOpen(true)
                   }}
                 >
-                  <div className="menu-item-icon">⚙️</div>
+                  <div className="menu-item-icon"><PopIcon name="settings" size={14} /></div>
                   <div className="menu-item-text">
                     <strong>Studio Settings</strong>
                     <span>Themes, AI models, editor &amp; exports</span>
                   </div>
-                  <div className="menu-item-arrow">→</div>
+                  <div className="menu-item-arrow"><PopIcon name="arrow" size={14} /></div>
                 </button>
 
                 <button
@@ -5755,12 +5955,12 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     setHistoryOpen(true)
                   }}
                 >
-                  <div className="menu-item-icon">📜</div>
+                  <div className="menu-item-icon"><PopIcon name="history" size={14} /></div>
                   <div className="menu-item-text">
                     <strong>Task &amp; Chat History</strong>
                     <span>{taskHistory.length} saved sessions</span>
                   </div>
-                  <div className="menu-item-arrow">→</div>
+                  <div className="menu-item-arrow"><PopIcon name="arrow" size={14} /></div>
                 </button>
 
                 <button
@@ -5770,12 +5970,12 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     openChat()
                   }}
                 >
-                  <div className="menu-item-icon">✨</div>
+                  <div className="menu-item-icon"><PopIcon name="sparkle" size={14} /></div>
                   <div className="menu-item-text">
                     <strong>AI Coding Assistant</strong>
                     <span>Chat, explain, optimize &amp; write code</span>
                   </div>
-                  <div className="menu-item-arrow">→</div>
+                  <div className="menu-item-arrow"><PopIcon name="arrow" size={14} /></div>
                 </button>
 
                 <button
@@ -5785,12 +5985,12 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     setVaultOpen(true)
                   }}
                 >
-                  <div className="menu-item-icon">🔑</div>
+                  <div className="menu-item-icon"><PopIcon name="key" size={14} /></div>
                   <div className="menu-item-text">
                     <strong>API Tokens &amp; Vault</strong>
                     <span>{vault.openai || vault.gemini ? 'Keys linked' : 'ChatGPT & Gemini keys'}</span>
                   </div>
-                  <div className="menu-item-arrow">→</div>
+                  <div className="menu-item-arrow"><PopIcon name="arrow" size={14} /></div>
                 </button>
 
                 <button
@@ -5800,12 +6000,12 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     openTokenHelper('gemini')
                   }}
                 >
-                  <div className="menu-item-icon">ℹ️</div>
+                  <div className="menu-item-icon"><PopIcon name="info" size={14} /></div>
                   <div className="menu-item-text">
                     <strong>Get API Tokens Guide</strong>
                     <span>Step-by-step helper for Gemini &amp; ChatGPT</span>
                   </div>
-                  <div className="menu-item-arrow">→</div>
+                  <div className="menu-item-arrow"><PopIcon name="arrow" size={14} /></div>
                 </button>
 
                 <button
@@ -5815,12 +6015,12 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     setAppModalOpen(true)
                   }}
                 >
-                  <div className="menu-item-icon">📱</div>
+                  <div className="menu-item-icon"><PopIcon name="phone" size={14} /></div>
                   <div className="menu-item-text">
                     <strong>Install App / Multi-Platform</strong>
                     <span>Add to Home Screen on Phone or PC</span>
                   </div>
-                  <div className="menu-item-arrow">→</div>
+                  <div className="menu-item-arrow"><PopIcon name="arrow" size={14} /></div>
                 </button>
 
                 <button
@@ -5830,12 +6030,12 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     openFolderPicker()
                   }}
                 >
-                  <div className="menu-item-icon">📂</div>
+                  <div className="menu-item-icon"><PopIcon name="folderOpen" size={14} /></div>
                   <div className="menu-item-text">
                     <strong>Open Local Project</strong>
                     <span>{workspace.name ? `Current: ${workspace.name}` : 'Open folder or files'}</span>
                   </div>
-                  <div className="menu-item-arrow">→</div>
+                  <div className="menu-item-arrow"><PopIcon name="arrow" size={14} /></div>
                 </button>
 
                 <button
@@ -5845,12 +6045,12 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                     openFolderPicker()
                   }}
                 >
-                  <div className="menu-item-icon">🌐</div>
+                  <div className="menu-item-icon"><PopIcon name="globe" size={14} /></div>
                   <div className="menu-item-text">
                     <strong>Server Workspace Browser</strong>
                     <span>Browse host workspace</span>
                   </div>
-                  <div className="menu-item-arrow">→</div>
+                  <div className="menu-item-arrow"><PopIcon name="arrow" size={14} /></div>
                 </button>
               </div>
             </div>
@@ -5861,7 +6061,11 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
       {settingsOpen && (
         <SettingsModal
           isOpen={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => { setSettingsOpen(false); setSettingsTab(null) }}
+          initialTab={settingsTab}
+          pulseAvailable={Boolean(pulseBridge || webPulse)}
+          pulseSettings={pulseSettings}
+          onUpdatePulseSettings={updatePulseSettings}
           allModels={allModels}
           settings={settings}
           onUpdateSettings={(newSettings) => {
@@ -5904,13 +6108,13 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               title="Close guide"
               style={{ position: 'absolute', top: 14, right: 14, zIndex: 10 }}
             >
-              ✕
+              <PopIcon name="close" size={14} />
             </button>
             <div className="sheet-handle" />
 
             <div className="token-guide-hero">
               <div className="token-guide-badge">
-                <span className="guide-sparkle">✦</span>
+                <span className="guide-sparkle"><PopIcon name="sparkle" size={14} /></span>
                 <span>API Token Generator Helper</span>
               </div>
               <h3>How to Generate API Tokens</h3>
@@ -5923,7 +6127,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 className={`guide-seg-btn ${tokenGuideTab === 'gemini' ? 'on' : ''}`}
                 onClick={() => setTokenGuideTab('gemini')}
               >
-                <span className="seg-ico">✨</span>
+                <span className="seg-ico"><PopIcon name="sparkle" size={14} /></span>
                 <span>Google Gemini</span>
                 <span className="seg-tag free">100% Free</span>
               </button>
@@ -5932,7 +6136,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                 className={`guide-seg-btn ${tokenGuideTab === 'openai' ? 'on' : ''}`}
                 onClick={() => setTokenGuideTab('openai')}
               >
-                <span className="seg-ico">⚡</span>
+                <span className="seg-ico"><PopIcon name="zap" size={14} /></span>
                 <span>ChatGPT / OpenAI</span>
                 <span className="seg-tag">Direct API</span>
               </button>
@@ -5942,7 +6146,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
               {tokenGuideTab === 'gemini' ? (
                 <div className="guide-flow">
                   <div className="guide-banner gemini">
-                    <span className="banner-ico">🎁</span>
+                    <span className="banner-ico"><PopIcon name="gift" size={14} /></span>
                     <div className="banner-text">
                       <strong>Zero Cost / 100% Free Tier:</strong> Google AI Studio provides high free rate limits for Gemini 3.8 Flash &amp; Pro without requiring a credit card or billing setup!
                     </div>
@@ -5961,7 +6165,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                           className="guide-link-btn"
                         >
                           <span>Open Google AI Studio</span>
-                          <span className="arrow">↗</span>
+                          <span className="arrow"><PopIcon name="external" size={14} /></span>
                         </a>
                       </div>
                     </div>
@@ -6009,14 +6213,14 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         setVaultOpen(true)
                       }}
                     >
-                      Paste Key in Token Vault →
+                      Paste Key in Token Vault <PopIcon name="arrow" size={14} />
                     </button>
                   </div>
                 </div>
               ) : (
                 <div className="guide-flow">
                   <div className="guide-banner openai">
-                    <span className="banner-ico">⚡</span>
+                    <span className="banner-ico"><PopIcon name="zap" size={14} /></span>
                     <div className="banner-text">
                       <strong>Direct OpenAI Developer API:</strong> Use your OpenAI developer account to unlock GPT-4o, GPT-4o mini, and o3-mini reasoning models.
                     </div>
@@ -6035,7 +6239,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                           className="guide-link-btn openai"
                         >
                           <span>Open OpenAI Platform</span>
-                          <span className="arrow">↗</span>
+                          <span className="arrow"><PopIcon name="external" size={14} /></span>
                         </a>
                       </div>
                     </div>
@@ -6083,7 +6287,7 @@ ${lastUserPrompt ? `> ${lastUserPrompt}` : '*(No prior prompt in thread)*'}
                         setVaultOpen(true)
                       }}
                     >
-                      Paste Key in Token Vault →
+                      Paste Key in Token Vault <PopIcon name="arrow" size={14} />
                     </button>
                   </div>
                 </div>

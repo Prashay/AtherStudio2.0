@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FC } from "react";
+import PopIcon from "./PopIcon";
 import type { Collection, ConsoleLog, Environment } from "../types";
 import { METHOD_COLORS } from "../types";
 import { getProxyBaseUrl } from "../request";
@@ -366,7 +367,7 @@ export const ConsoleDrawer: FC<Props> = ({
             />
             {search && (
               <button className="console-search-clear" onClick={() => setSearch("")}>
-                ✕
+                <PopIcon name="close" size={14} />
               </button>
             )}
           </div>
@@ -410,7 +411,7 @@ export const ConsoleDrawer: FC<Props> = ({
           </button>
 
           <button className="console-close-btn" title="Close Console" onClick={onClose}>
-            ✕
+            <PopIcon name="close" size={14} />
           </button>
         </div>
       </div>
@@ -456,7 +457,7 @@ export const ConsoleDrawer: FC<Props> = ({
           <div className="console-log-stream" ref={scrollRef}>
             {filteredLogs.length === 0 ? (
               <div className="console-empty-state">
-                <div style={{ fontSize: 24, marginBottom: 4 }}>📋</div>
+                <div style={{ fontSize: 24, marginBottom: 4 }}><PopIcon name="copy" size={14} /></div>
                 <div>No logs to display in this view</div>
                 <div className="console-empty-hint">Send a request or type commands in the Terminal tab to inspect network telemetry.</div>
               </div>

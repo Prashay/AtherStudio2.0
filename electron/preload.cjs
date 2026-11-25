@@ -6,6 +6,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pulse: {
     select: (mode) => ipcRenderer.send('ather:pulse-select', mode),
     setTop: (top) => ipcRenderer.send('ather:pulse-top', top),
+    setTheme: (theme) => ipcRenderer.send('ather:pulse-theme', theme),
+    getSettings: () => ipcRenderer.invoke('ather:pulse-settings-get'),
+    updateSettings: (patch) => ipcRenderer.send('ather:pulse-settings-update', patch),
+    setOverlay: (open) => ipcRenderer.send('ather:pulse-overlay', Boolean(open)),
+    onSettingsState: (callback) => {
+      const listener = (_event, state) => callback(state)
+      ipcRenderer.on('ather:pulse-settings-state', listener)
+      return () => ipcRenderer.removeListener('ather:pulse-settings-state', listener)
+    },
+    onOpenSettings: (callback) => {
+      const listener = () => callback()
+      ipcRenderer.on('ather:pulse-open-settings', listener)
+      return () => ipcRenderer.removeListener('ather:pulse-open-settings', listener)
+    },
     onMode: (callback) => {
       const listener = (_event, mode) => callback(mode)
       ipcRenderer.on('ather:pulse-mode', listener)
@@ -48,12 +62,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Native Dialogs & Interactive Prompts
   openFolderDialog: (defaultPath) =>
     ipcRenderer.invoke('dialog-show-open-folder', { defaultPath }),
+  chooseFolder: (options) =>
+    ipcRenderer.invoke('dialog-choose-folder', options || {}),
   openFileDialog: (options) =>
     ipcRenderer.invoke('dialog-show-open-file', options),
   saveFileDialog: (options) =>
     ipcRenderer.invoke('dialog-show-save-file', options),
-  prompt: (options) =>
-    ipcRenderer.invoke('show-prompt', typeof options === 'string' ? { message: options } : options),
+  prompt: (options) => {
+    const request = typeof options === 'string' ? { message: options } : { ...(options || {}) }
+    // Pass the current look so the prompt window matches the active theme (visual only).
+    try {
+      const root = getComputedStyle(document.documentElement)
+      const appEl = document.querySelector('.app')
+      const app = appEl ? getComputedStyle(appEl) : root
+      const v = (style, name) => style.getPropertyValue(name).trim()
+      request.theme = {
+        accent: v(root, '--ui-accent'),
+        ink: v(root, '--ui-accent-ink'),
+        font: v(root, '--ui-font'),
+        text: v(app, '--paper'),
+        muted: v(app, '--muted'),
+        card: v(root, '--theme-card'),
+        bg: v(root, '--theme-bg'),
+        light: /^(light|pearl)$/.test(document.documentElement.dataset.workbenchTheme || '')
+      }
+    } catch {}
+    return ipcRenderer.invoke('show-prompt', request)
+  },
 
   // Application Menu & Shortcut Events
   onMenuAction: (callback) => {

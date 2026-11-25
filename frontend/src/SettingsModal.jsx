@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import PopIcon from './PopupIcons.jsx'
 
 export const SETTINGS_KEY = 'aether.settings.v1'
 
@@ -53,9 +54,16 @@ export function SettingsModal({
   onExportAllChats,
   onClearAllChats,
   vault,
-  onSaveVault
+  onSaveVault,
+  initialTab = null,
+  pulseAvailable = false,
+  pulseSettings = null,
+  onUpdatePulseSettings
 }) {
-  const [activeTab, setActiveTab] = useState('general') // general | ai | editor | keys | data
+  const [activeTab, setActiveTab] = useState('general') // general | studio | ai | editor | keys | data
+  useEffect(() => {
+    if (isOpen && initialTab) setActiveTab(initialTab)
+  }, [isOpen, initialTab])
   const [localSettings, setLocalSettings] = useState(settings || DEFAULT_SETTINGS)
   const [showGeminiKey, setShowGeminiKey] = useState(false)
   const [showOpenaiKey, setShowOpenaiKey] = useState(false)
@@ -141,14 +149,14 @@ export function SettingsModal({
         {/* Settings Header */}
         <div className="settings-head">
           <div className="settings-title-row">
-            <span className="settings-icon">⚙️</span>
+            <span className="settings-icon"><PopIcon name="settings" size={20} /></span>
             <div>
               <h3>Studio Settings</h3>
               <p>Configure preferences, AI intelligence, editor, and API integrations</p>
             </div>
           </div>
           <button className="settings-close-btn" onClick={onClose} title="Close settings">
-            ✕
+            <PopIcon name="close" size={14} />
           </button>
         </div>
 
@@ -159,35 +167,44 @@ export function SettingsModal({
               className={`settings-nav-item ${activeTab === 'general' ? 'active' : ''}`}
               onClick={() => setActiveTab('general')}
             >
-              <span className="nav-ico">🎨</span>
+              <span className="nav-ico"><PopIcon name="palette" size={16} /></span>
               <span>General &amp; Theme</span>
             </button>
+            {pulseAvailable && (
+              <button
+                className={`settings-nav-item ${activeTab === 'studio' ? 'active' : ''}`}
+                onClick={() => setActiveTab('studio')}
+              >
+                <span className="nav-ico"><PopIcon name="globe" size={16} /></span>
+                <span>Studio &amp; Dashboard</span>
+              </button>
+            )}
             <button
               className={`settings-nav-item ${activeTab === 'ai' ? 'active' : ''}`}
               onClick={() => setActiveTab('ai')}
             >
-              <span className="nav-ico">🧠</span>
+              <span className="nav-ico"><PopIcon name="brain" size={16} /></span>
               <span>AI &amp; Chat Mode</span>
             </button>
             <button
               className={`settings-nav-item ${activeTab === 'editor' ? 'active' : ''}`}
               onClick={() => setActiveTab('editor')}
             >
-              <span className="nav-ico">💻</span>
+              <span className="nav-ico"><PopIcon name="code" size={16} /></span>
               <span>Editor &amp; Markdown</span>
             </button>
             <button
               className={`settings-nav-item ${activeTab === 'keys' ? 'active' : ''}`}
               onClick={() => setActiveTab('keys')}
             >
-              <span className="nav-ico">🔑</span>
+              <span className="nav-ico"><PopIcon name="key" size={16} /></span>
               <span>API Keys &amp; Vault</span>
             </button>
             <button
               className={`settings-nav-item ${activeTab === 'data' ? 'active' : ''}`}
               onClick={() => setActiveTab('data')}
             >
-              <span className="nav-ico">📦</span>
+              <span className="nav-ico"><PopIcon name="archive" size={16} /></span>
               <span>Data &amp; Export</span>
             </button>
           </aside>
@@ -218,7 +235,8 @@ export function SettingsModal({
                       ['dark', 'Deep Charcoal', '#151822'],
                       ['light', 'Apple Light', '#f5f5f7'],
                       ['glass', 'Frosted Glass', '#342d29'],
-                      ['pearl', 'Pearl Glass', '#e4f0ff']
+                      ['pearl', 'Pearl Glass', '#e4f0ff'],
+                      ['liquid', 'Liquid Glass', 'linear-gradient(135deg, #3a3a3c, #1c1c1e 60%, #0a84ff)']
                     ].map(([id, label, color]) => {
                       const active = (localSettings.workbenchTheme || DEFAULT_SETTINGS.workbenchTheme) === id
                       return <button key={id} type="button" className={`theme-chip ${active ? 'active' : ''}`}
@@ -366,21 +384,21 @@ export function SettingsModal({
                       className={`toggle-option ${localSettings.mdDefaultMode === 'reader' ? 'active' : ''}`}
                       onClick={() => update('mdDefaultMode', 'reader')}
                     >
-                      📖 Reader (Rendered)
+                      <PopIcon name="book" size={14} /> Reader (Rendered)
                     </button>
                     <button
                       type="button"
                       className={`toggle-option ${localSettings.mdDefaultMode === 'split' ? 'active' : ''}`}
                       onClick={() => update('mdDefaultMode', 'split')}
                     >
-                      ◫ Split View
+                      <PopIcon name="columns" size={14} /> Split View
                     </button>
                     <button
                       type="button"
                       className={`toggle-option ${localSettings.mdDefaultMode === 'edit' ? 'active' : ''}`}
                       onClick={() => update('mdDefaultMode', 'edit')}
                     >
-                      ✏️ Code Editor
+                      <PopIcon name="pencil" size={14} /> Code Editor
                     </button>
                   </div>
                 </div>
@@ -436,7 +454,7 @@ export function SettingsModal({
                       rel="noopener noreferrer"
                       className="field-link"
                     >
-                      Get Free Key from Google AI Studio ↗
+                      Get Free Key from Google AI Studio <PopIcon name="external" size={14} />
                     </a>
                   </div>
                   <div className="key-input-wrap">
@@ -453,7 +471,7 @@ export function SettingsModal({
                       onClick={() => setShowGeminiKey((v) => !v)}
                       title={showGeminiKey ? 'Hide key' : 'Show key'}
                     >
-                      {showGeminiKey ? '🙈' : '👁️'}
+                      {showGeminiKey ? <PopIcon name="eyeOff" size={14} /> : <PopIcon name="eye" size={14} />}
                     </button>
                     <button
                       type="button"
@@ -476,7 +494,7 @@ export function SettingsModal({
                       rel="noopener noreferrer"
                       className="field-link"
                     >
-                      Get OpenAI API Key ↗
+                      Get OpenAI API Key <PopIcon name="external" size={14} />
                     </a>
                   </div>
                   <div className="key-input-wrap">
@@ -493,7 +511,7 @@ export function SettingsModal({
                       onClick={() => setShowOpenaiKey((v) => !v)}
                       title={showOpenaiKey ? 'Hide key' : 'Show key'}
                     >
-                      {showOpenaiKey ? '🙈' : '👁️'}
+                      {showOpenaiKey ? <PopIcon name="eyeOff" size={14} /> : <PopIcon name="eye" size={14} />}
                     </button>
                     <button
                       type="button"
@@ -515,6 +533,112 @@ export function SettingsModal({
               </div>
             )}
 
+            {/* STUDIO & DASHBOARD (Pulse) — applied instantly */}
+            {activeTab === 'studio' && pulseAvailable && (
+              <div className="settings-section">
+                {!pulseSettings ? (
+                  <div className="settings-field">
+                    <label>Studio &amp; Dashboard</label>
+                    <p className="field-desc">These settings load once Studio has started. Open Studio or Dashboard once, then come back here.</p>
+                  </div>
+                ) : (() => {
+                  const ps = pulseSettings
+                  const fonts = ps.fontSettings || {}
+                  const limits = ps.limits || { ui: { min: 11, max: 22 }, code: { min: 10, max: 24 } }
+                  const send = (patch) => onUpdatePulseSettings?.(patch)
+                  const stepFont = (key, delta, range) => {
+                    const value = Math.max(range.min, Math.min(range.max, (Number(fonts[key]) || 12) + delta))
+                    send({ fontSettings: { [key]: value } })
+                  }
+                  return (
+                    <>
+                      <p className="field-desc studio-live-note"><PopIcon name="zap" size={13} /> Changes apply to Studio and Dashboard instantly.</p>
+
+                      <div className="settings-field">
+                        <label className="settings-switch-row">
+                          <span>
+                            <strong>Match IDE theme</strong>
+                            <span className="field-desc">Studio and Dashboard use the IDE's look, accent and font.</span>
+                          </span>
+                          <input type="checkbox" className="settings-switch" checked={ps.followIde !== false}
+                            onChange={(e) => send({ followIde: e.target.checked })} />
+                        </label>
+                      </div>
+
+                      <div className="settings-field">
+                        <label>Studio Theme</label>
+                        <p className="field-desc">{ps.followIde !== false ? 'Used when "Match IDE theme" is off. Picking one turns matching off.' : 'Theme for Studio and Dashboard.'}</p>
+                        <div className="theme-grid">
+                          {(ps.themes || []).map((t) => {
+                            const active = ps.followIde === false && ps.theme === t.id
+                            return (
+                              <button key={t.id} type="button" className={`theme-chip ${active ? 'active' : ''}`} aria-pressed={active}
+                                onClick={() => send({ theme: t.id, followIde: false })}>
+                                <span className="theme-swatch" style={{ background: `linear-gradient(135deg, ${t.cardBg || t.bg}, ${t.bg} 60%, ${t.accent})` }} />
+                                <span className="theme-name">{t.name}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="settings-field">
+                        <label>Interface Font</label>
+                        <div className="studio-font-row">
+                          <select className="settings-select" value={fonts.fontFamily || ''} onChange={(e) => send({ fontSettings: { fontFamily: e.target.value } })}>
+                            {(ps.fonts || []).map((f) => <option key={f.id} value={f.value}>{f.name}</option>)}
+                          </select>
+                          <div className="studio-stepper" role="group" aria-label="Interface font size">
+                            <button type="button" aria-label="Smaller" onClick={() => stepFont('fontSize', -1, limits.ui)}><PopIcon name="minus" size={13} /></button>
+                            <span>{fonts.fontSize}px</span>
+                            <button type="button" aria-label="Larger" onClick={() => stepFont('fontSize', 1, limits.ui)}><PopIcon name="plus" size={13} /></button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="settings-field">
+                        <label>Code Font</label>
+                        <div className="studio-font-row">
+                          <select className="settings-select" value={fonts.codeFontFamily || ''} onChange={(e) => send({ fontSettings: { codeFontFamily: e.target.value } })}>
+                            {(ps.codeFonts || []).map((f) => <option key={f.id} value={f.value}>{f.name}</option>)}
+                          </select>
+                          <div className="studio-stepper" role="group" aria-label="Code font size">
+                            <button type="button" aria-label="Smaller" onClick={() => stepFont('codeFontSize', -1, limits.code)}><PopIcon name="minus" size={13} /></button>
+                            <span>{fonts.codeFontSize}px</span>
+                            <button type="button" aria-label="Larger" onClick={() => stepFont('codeFontSize', 1, limits.code)}><PopIcon name="plus" size={13} /></button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="settings-field">
+                        <label>Response Panel</label>
+                        <div className="theme-grid studio-layout-grid">
+                          {[['response-bottom', 'Bottom', 'Response below the request'], ['response-right', 'Side by side', 'Response on the right']].map(([id, name, hint]) => (
+                            <button key={id} type="button" className={`theme-chip ${ps.panelLayout === id ? 'active' : ''}`} aria-pressed={ps.panelLayout === id}
+                              title={hint} onClick={() => send({ panelLayout: id })}>
+                              <PopIcon name={id === 'response-bottom' ? 'columns' : 'sidebar'} size={14} />
+                              <span className="theme-name">{name}</span>
+                            </button>
+                          ))}
+                        </div>
+                        <button type="button" className="ghost tiny studio-reset-btn" onClick={() => send({ action: 'resetPanelSizes' })}>
+                          <PopIcon name="refresh" size={13} /> Reset panel sizes
+                        </button>
+                      </div>
+
+                      <div className="settings-field">
+                        <label>Request Timeout</label>
+                        <p className="field-desc">Milliseconds before a request is cancelled. 0 means no timeout.</p>
+                        <input type="number" min="0" step="500" className="settings-input studio-timeout"
+                          value={ps.requestTimeout ?? 0}
+                          onChange={(e) => send({ requestTimeout: Math.max(0, Number(e.target.value) || 0) })} />
+                      </div>
+                    </>
+                  )
+                })()}
+              </div>
+            )}
+
             {/* TAB 5: DATA & EXPORT */}
             {activeTab === 'data' && (
               <div className="settings-section">
@@ -527,14 +651,14 @@ export function SettingsModal({
                       className="ghost settings-action-btn"
                       onClick={() => onExportAllChats && onExportAllChats('markdown')}
                     >
-                      📥 Export as Markdown (.md)
+                      <PopIcon name="download" size={14} /> Export as Markdown (.md)
                     </button>
                     <button
                       type="button"
                       className="ghost settings-action-btn"
                       onClick={() => onExportAllChats && onExportAllChats('json')}
                     >
-                      📥 Export as JSON (.json)
+                      <PopIcon name="download" size={14} /> Export as JSON (.json)
                     </button>
                   </div>
                 </div>
@@ -552,7 +676,7 @@ export function SettingsModal({
                       }
                     }}
                   >
-                    🗑️ Clear Active Thread
+                    <PopIcon name="trash" size={14} /> Clear Active Thread
                   </button>
                 </div>
 
@@ -584,7 +708,7 @@ export function SettingsModal({
 
         {/* Footer with Save / Cancel */}
         <div className="settings-foot">
-          {saveToast && <span className="save-toast-tag">✓ Preferences Saved!</span>}
+          {saveToast && <span className="save-toast-tag"><PopIcon name="check" size={14} /> Preferences Saved!</span>}
           <div className="foot-actions">
             <button type="button" className="ghost" onClick={onClose}>
               Cancel

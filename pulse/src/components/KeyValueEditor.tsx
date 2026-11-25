@@ -1,4 +1,5 @@
 import { useState, useId } from "react";
+import PopIcon from "./PopIcon";
 import type { KeyValue } from "../types";
 import { kv, uid } from "../id";
 import { VariableInput } from "./VariableInput";
@@ -194,7 +195,7 @@ export function KeyValueEditor({
         /* Bulk Edit Mode */
         <div className="kv-bulk-container">
           <div className="kv-bulk-hint">
-            <span className="kv-hint-icon">💡</span>
+            <span className="kv-hint-icon"><PopIcon name="bulb" size={14} /></span>
             <span className="kv-hint-text">
               Enter one <code>Key: Value</code> per line. Prefix line with <code>//</code> to disable.
               Use <code>{"{{$guid}}"}</code> to generate a random GUID on send.

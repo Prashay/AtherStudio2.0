@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useRef, useEffect, useCallback } from "react";
+import PopIcon from "./PopIcon";
 import type { ProxyResponse } from "../types";
 import { formatBytes, prettyBody } from "../request";
 import { JsonBodyEditor } from "./JsonBodyEditor";
@@ -302,14 +303,14 @@ export function ResponsePane({ response, sending }: Props) {
             <span className={`status-pill ${statusClass}`}>
               {response.error ? response.statusText : `${response.status} ${response.statusText}`}
             </span>
-            <span className="resp-meta-chip">⏱️ {response.time} ms</span>
-            <span className="resp-meta-chip">📦 {formatBytes(response.size)}</span>
+            <span className="resp-meta-chip"><PopIcon name="history" size={14} /> {response.time} ms</span>
+            <span className="resp-meta-chip"><PopIcon name="archive" size={14} /> {formatBytes(response.size)}</span>
             <button
               className={`btn sm ghost ${searchOpen ? "active" : ""}`}
               onClick={() => setSearchOpen((prev) => !prev)}
               title={`Find in response (${shortcutLabel})`}
             >
-              🔍 Search
+              <PopIcon name="search" size={14} /> Search
             </button>
             {tab === "body" && (
               <button className="btn sm ghost" onClick={() => setPretty((p) => !p)} title="Toggle formatted JSON vs raw body">
@@ -328,7 +329,7 @@ export function ResponsePane({ response, sending }: Props) {
       {response && searchOpen && (
         <div className="resp-search-bar">
           <div className="resp-search-input-wrap">
-            <span className="resp-search-icon">🔍</span>
+            <span className="resp-search-icon"><PopIcon name="search" size={14} /></span>
             <input
               ref={searchInputRef}
               type="text"
@@ -345,7 +346,7 @@ export function ResponsePane({ response, sending }: Props) {
                 onClick={() => setSearchTerm("")}
                 title="Clear search"
               >
-                ✕
+                <PopIcon name="close" size={14} />
               </button>
             )}
           </div>
@@ -367,7 +368,7 @@ export function ResponsePane({ response, sending }: Props) {
                 disabled={matchCount === 0}
                 title="Previous match (Shift+Enter or ↑)"
               >
-                ▲
+                <PopIcon name="chevronUp" size={14} />
               </button>
               <button
                 type="button"
@@ -376,7 +377,7 @@ export function ResponsePane({ response, sending }: Props) {
                 disabled={matchCount === 0}
                 title="Next match (Enter or ↓)"
               >
-                ▼
+                <PopIcon name="chevronDown" size={14} />
               </button>
             </div>
           )}
@@ -386,7 +387,7 @@ export function ResponsePane({ response, sending }: Props) {
             onClick={() => setSearchOpen(false)}
             title="Close search (Esc)"
           >
-            ✕
+            <PopIcon name="close" size={14} />
           </button>
         </div>
       )}
